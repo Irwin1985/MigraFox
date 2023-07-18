@@ -1,16 +1,1214 @@
+Local loDB, lcDriver, lcServer, lcDatabase, lcUser, lcPassword, lcEngine
+
+lcEngine = "Firebird"
+Do case
+Case lcEngine == "MySQL"
+	lcDriver = "MySQL ODBC 5.1 Driver"
+	lcServer = "localhost"
+	lcDatabase = "continentes"
+	lcUser = "root"
+	lcPassWord = "1234"
+Case lcEngine == "MSSQL"
+	lcDriver = "SQL Server Native Client 11.0"
+	lcServer = "PC-IRWIN\SQLIRWIN"
+	lcDatabase = "VIRFIJOS"
+	lcUser = "sa"
+	lcPassWord = "Subifor2012"
+Case lcEngine == "Firebird"
+	lcDriver = "Firebird/Interbase(r) driver"
+	lcServer = "localhost"
+	lcDatabase = "C:\a1\FB_PRUEBA.gdb"
+	lcUser = "SYSDBA"
+	lcPassWord = "1234"
+EndCase
+
+loDB = CreateObject(lcEngine)
+loDB.cPKName = "unique_id"
+loDB.bUseCA = .F.
+loDB.cDriver = lcDriver
+loDB.cServer = lcServer
+loDB.cDatabase = lcDatabase
+loDB.cUser = lcUser
+loDB.cPassword = lcPassWord
+If !loDB.connect()
+	Return
+EndIf
+loDB.migrate("F:\Desarrollo\Mini_ERP\Sical\clientes.tmg")
+
+Release loDB
+
+* =================================================================================== *
+* Implementation
+* =================================================================================== *
+Procedure defineConstants
+	#ifndef tkIdent
+		#Define tkIdent 1
+	#Endif
+	#ifndef tkPrimary
+		#Define tkPrimary 2
+	#Endif
+	#ifndef tkSymbol
+		#Define tkSymbol 3
+	#Endif
+	#ifndef tkGeneric
+		#Define tkGeneric 4
+	#endif
+
+	#ifndef CRLF
+		#define CRLF Chr(13) + Chr(10)
+	#endif
+	#ifndef ttTable
+		#Define ttTable 100
+	#Endif
+	#ifndef ttDescription
+		#Define ttDescription 101
+	#Endif
+	#ifndef ttFields
+		#Define ttFields 102
+	#Endif
+	#ifndef ttName
+		#Define ttName 103
+	#Endif
+	#ifndef ttType
+		#Define ttType 104
+	#Endif
+	#ifndef ttSize
+		#Define ttSize 105
+	#Endif
+	#ifndef ttPrimaryKey
+		#Define ttPrimaryKey 106
+	#Endif
+	#ifndef ttAllowNull
+		#Define ttAllowNull 107
+	#Endif	
+	#ifndef ttDefault
+		#Define ttDefault 108
+	#Endif
+	#ifndef ttForeignKey
+		#Define ttForeignKey 109
+	#endif
+	#ifndef ttFkTable
+		#Define ttFkTable 110
+	#endif
+	#ifndef ttFkField
+		#Define ttFkField 111
+	#endif
+	#ifndef ttOnDelete
+		#Define ttOnDelete 112
+	#endif
+	#ifndef ttOnUpdate
+		#Define ttOnUpdate 113
+	#endif
+	#ifndef ttCascade
+		#Define ttCascade 114
+	#endif
+	#ifndef ttRestrict
+		#Define ttRestrict 115
+	#endif
+	#ifndef ttNull
+		#Define ttNull 116
+	#endif
+	#ifndef ttIndex
+		#Define ttIndex 117
+	#endif
+	#ifndef ttColumns
+		#Define ttColumns 118
+	#endif
+	#ifndef ttSort
+		#Define ttSort 119
+	#endif
+	#ifndef ttUnique
+		#Define ttUnique 120
+	#endif
+	#ifndef ttAsc
+		#Define ttAsc 121
+	#endif
+	#ifndef ttDesc
+		#Define ttDesc 122
+	#endif
+	* ======================================= *
+	* Table data types
+	* ======================================= *
+	#ifndef ttChar
+		#Define ttChar 200
+	#Endif
+	#ifndef ttVarchar
+		#Define ttVarchar 201
+	#Endif
+	#ifndef ttDecimal
+		#Define ttDecimal 202
+	#Endif
+	#ifndef ttDate
+		#Define ttDate 203
+	#Endif
+	#ifndef ttDateTime
+		#Define ttDateTime 204
+	#Endif
+	#ifndef ttDouble
+		#Define ttDouble 205
+	#Endif
+	#ifndef ttFloat
+		#Define ttFloat 206
+	#Endif
+	#ifndef ttInt
+		#Define ttInt 207
+	#Endif
+	#ifndef ttBool
+		#Define ttBool 208
+	#Endif
+	#ifndef ttText
+		#Define ttText 209
+	#Endif
+	#ifndef ttVarBinary
+		#Define ttVarBinary 210
+	#Endif
+	#ifndef ttBlob
+		#Define ttBlob 211
+	#Endif	
+	
+	#ifndef ttIdent
+		#Define ttIdent 21
+	#Endif
+	#ifndef ttNumber
+		#Define ttNumber 22
+	#Endif
+	#ifndef ttString
+		#Define ttString 23
+	#Endif
+	#ifndef ttEof
+		#Define ttEof 24
+	#Endif
+	#ifndef ttColon
+		#Define ttColon 25
+	#Endif
+	#ifndef ttMinus	
+		#Define ttMinus 26
+	#Endif
+	#ifndef ttTrue
+		#Define ttTrue 27
+	#Endif
+	#ifndef ttFalse
+		#Define ttFalse 28
+	#Endif
+	#ifndef ttAutoIncrement
+		#Define ttAutoIncrement 29
+	#Endif
+	#ifndef ttNewLine
+		#Define ttNewLine 30
+	#Endif
+	#ifndef ttProgram
+		#Define ttProgram 31
+	#Endif
+	#ifndef ttComma
+		#define ttComma 32
+	#endif
+	#ifndef ttLeftBracket
+		#define ttLeftBracket 33
+	#endif
+	#ifndef ttRightBracket
+		#define ttRightBracket 34
+	#endif
+Endproc
+
+* =================================================================================== *
+* Scanner Class
+* =================================================================================== *
+Define Class Scanner As Custom
+	Hidden ;
+		cSource, ;
+		nStart, ;
+		nCurrent, ;
+		nCapacity, ;
+		nLength, ;
+		nSourceLen, ;
+		cLetters, ;
+		nLine, ;
+		nCol, ;
+		oKeywords
+
+	cSource = ''
+	nStart = 0
+	nCurrent = 1
+	cLetters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_'
+	nLine = 1
+	nCol = 0
+	nCapacity = 0
+	nLength = 1
+	nSourceLen = 0
+	nTokenAnt = 0
+
+	Dimension aTokens[1]
+
+	Procedure Init(tcSource)
+		This.cSource = tcSource
+		This.nSourceLen = Len(tcSource)
+
+		* Create keywords
+		This.oKeywords = Createobject("Scripting.Dictionary")
+		This.oKeywords.Add('table', ttTable)
+		This.oKeywords.Add('description', ttDescription)
+		This.oKeywords.Add('fields', ttFields)
+
+		* Fields attributes
+		This.oKeywords.Add('name', ttName)
+		This.oKeywords.Add('type', ttType)
+		This.oKeywords.Add('size', ttSize)
+		This.oKeywords.Add('primarykey', ttPrimaryKey)
+		This.oKeywords.Add('allownull', ttAllowNull)
+		This.oKeywords.Add('default', ttDefault)
+		This.oKeywords.Add('foreignkey', ttForeignKey)
+		This.oKeywords.Add('fktable', ttFkTable)
+		This.oKeywords.Add('fkfield', ttFkField)
+		This.oKeywords.Add('ondelete', ttOnDelete)
+		This.oKeywords.Add('onupdate', ttOnUpdate)
+		This.oKeywords.Add('cascade', ttCascade)
+		This.oKeywords.Add('restrict', ttRestrict)
+		This.oKeywords.Add('null', ttNull)
+		This.oKeywords.Add('index', ttIndex)
+		This.oKeywords.Add('columns', ttColumns)
+		This.oKeywords.Add('sort', ttSort)
+		This.oKeywords.Add('unique', ttUnique)
+		This.oKeywords.Add('asc', ttAsc)
+		This.oKeywords.Add('desc', ttDesc)
+		This.oKeywords.Add('autoincrement', ttAutoIncrement)
+
+		* Data Types
+		This.oKeywords.Add('true', ttTrue)
+		This.oKeywords.Add('false', ttFalse)
+		
+		* Table data types
+		This.oKeywords.Add('char', ttChar)
+		This.oKeywords.Add('varchar', ttVarchar)
+		This.oKeywords.Add('decimal', ttDecimal)
+		This.oKeywords.Add('date', ttDate)
+		This.oKeywords.Add('datetime', ttDateTime)
+		This.oKeywords.Add('double', ttDouble)
+		This.oKeywords.Add('float', ttFloat)
+		This.oKeywords.Add('int', ttInt)
+		This.oKeywords.Add('bool', ttBool)
+		This.oKeywords.Add('text', ttText)
+		This.oKeywords.Add('varbinary', ttVarBinary)
+		This.oKeywords.Add('blob', ttBlob)
+	Endproc
+
+	Hidden Function advance
+		this.nCol = this.nCol + 1
+		This.nCurrent = This.nCurrent + 1
+		Return Substr(This.cSource, This.nCurrent-1, 1)
+	Endfunc
+
+	Hidden Function peek
+		If This.isAtEnd()
+			Return 'ÿ'
+		Endif
+		Return Substr(This.cSource, This.nCurrent, 1)
+	Endfunc
+
+	Hidden Function peekNext
+		If (This.nCurrent + 1) > This.nSourceLen
+			Return 'ÿ'
+		Endif
+		Return Substr(This.cSource, This.nCurrent+1, 1)
+	Endfunc
+
+	Hidden Procedure skipWhitespace
+		Local ch
+		Do While Inlist(This.peek(), Chr(9), Chr(32))
+			This.advance()
+		Enddo
+	Endproc
+
+	Hidden procedure readIdentifier
+		Local lcLexeme, lnCol, lnTokenType
+		lnCol = this.nCol-1
+		lnTokenType = ttIdent
+		Do While At(This.peek(), This.cLetters) > 0
+			This.advance()
+		Enddo
+		lcLexeme = Lower(Substr(This.cSource, This.nStart, This.nCurrent-This.nStart))
+		If This.oKeywords.Exists(lcLexeme)
+			lnTokenType = This.oKeywords.Item(lcLexeme)
+		Endif
+		This.addToken(lnTokenType, tkIdent, lcLexeme, lnCol)
+	EndProc
+
+	Hidden procedure readNumber
+		Local lcLexeme, llIsNegative, lnCol, lnLiteral
+		lcLexeme = ''
+		lnLiteral = 0
+		llIsNegative = This.peek() == '-'
+		lnCol = this.nCol-1
+		If llIsNegative
+			This.advance()
+		Endif
+
+		Do While Isdigit(This.peek())
+			This.advance()
+		Enddo
+
+		If This.peek() == '.' And Isdigit(This.peekNext())
+			This.advance()
+			Do While Isdigit(This.peek())
+				This.advance()
+			Enddo
+		Endif
+
+		lcLexeme = Substr(This.cSource, This.nStart, This.nCurrent-This.nStart)
+		try
+			lnLiteral = Val(lcLexeme)
+		Catch to loEx
+			MessageBox("No se pudo convertir a número el siguiente valor: " + lcLexeme + CRLF + "Mensaje: " + loEx.Message, 16)
+		EndTry
+
+		Return This.addToken(ttNumber, tkPrimary, lnLiteral, lnCol)
+	EndProc
+
+	Hidden procedure readString(tcStopChar)
+		Local lcLexeme, ch, lnCol
+		lnCol = this.nCol-1
+		Do While !this.isAtEnd()
+			ch = This.peek()
+			This.advance()
+			If ch == tcStopChar
+				Exit
+			Endif
+		Enddo
+		lcLexeme = Substr(This.cSource, This.nStart+1, This.nCurrent-This.nStart-2)
+
+		Return This.addToken(ttString, tkPrimary, lcLexeme, lnCol)
+	EndProc
+	
+	Hidden procedure skipComments
+		Do while !this.isAtEnd()		
+			If this.peek() == Chr(13)
+				Exit
+			EndIf
+			this.advance()
+		EndDo
+	endproc
+
+	Function scanTokens
+		Dimension This.aTokens[1]
+
+		Do While !This.isAtEnd()
+			This.skipWhitespace()
+			This.nStart = This.nCurrent
+			This.scanToken()
+		Enddo
+		This.addToken(ttEof)
+		This.nCapacity = This.nLength-1
+
+		* Shrink the array
+		Dimension This.aTokens[this.nCapacity]
+
+		Return @This.aTokens
+	Endfunc
+
+	Hidden Procedure scanToken
+		Local ch
+		ch = This.advance()
+		Do Case
+		Case ch == '#'
+			this.skipComments()
+		Case ch == '['
+			this.AddToken(ttLeftBracket, tkSymbol, ch)
+		Case ch == ']'
+			this.AddToken(ttRightBracket, tkSymbol, ch)
+		Case ch == ','
+			this.AddToken(ttComma, tkSymbol, ch)
+		Case ch == ':'
+			This.addToken(ttColon, tkSymbol, ch)			
+		Case ch == '-' And !Isdigit(This.peek())
+			This.addToken(ttMinus, tkSymbol, ch)
+		Case Inlist(ch, '"', "'")
+			This.readString(ch)
+		Case ch == Chr(13)
+			If this.nTokenAnt > 0 and this.nTokenAnt != ttNewLine
+				this.addToken(ttNewLine)
+			EndIf
+			this.advance() && skip chr(10)
+			this.nLine = this.nLine + 1
+			this.nCol = 1
+		Case ch == Chr(10)
+			* skip
+		Otherwise
+			If Isdigit(ch) Or (ch == '-' And Isdigit(This.peek()))
+				This.readNumber()
+				Return
+			Endif
+			If At(ch, This.cLetters) > 0
+				This.readIdentifier()
+				Return
+			Endif
+			This.showError(This.nLine, "Unknown character ['" + Transform(ch) + "'], ascii: [" + Transform(Asc(ch)) + "]")
+		Endcase
+	Endproc
+
+	Hidden Procedure addToken(tnType, tnKind, tvLiteral, tnCol)
+		This.checkCapacity()
+		Local loToken,lnCol
+		lnCol = Iif(Empty(tnCol), this.nCol, tnCol)
+		loToken = Createobject("Token", tnType, "", tvLiteral, This.nLine, lnCol)
+		loToken.nKind = Iif(Empty(tnKind), tkGeneric, tnKind)
+		This.aTokens[this.nLength] = loToken
+		This.nLength = This.nLength + 1
+		this.nTokenAnt = tnType
+	Endproc
+
+	Hidden Procedure checkCapacity
+		If This.nCapacity < This.nLength + 1
+			If Empty(This.nCapacity)
+				This.nCapacity = 8
+			Else
+				This.nCapacity = This.nCapacity * 2
+			Endif
+			Dimension This.aTokens[this.nCapacity]
+		Endif
+	Endproc
+
+	Hidden Procedure showError(tnLine, tcMessage)
+		Error "SYNTAX ERROR: (" + Transform(tnLine) + ":" + Transform(This.nLine) + ")" + tcMessage
+	Endproc
+
+	Hidden Function isAtEnd
+		Return This.nCurrent > This.nSourceLen
+	Endfunc
+
+Enddefine
+
+* =================================================================================== *
+* Parser Class
+* =================================================================================== *
+Define Class Parser as Custom
+	Hidden ;
+	oPeek, ;
+	oPeekNext, ;
+	oPrevious, ;
+	nCurrent
+	
+	Dimension aTokens[1]
+	nCurrent = 1
+
+	Procedure Init(taTokens)
+		=Acopy(taTokens, this.aTokens)
+	EndProc
+	
+	Function parse
+		Local loTables, loNode, loToken
+		loToken = Createobject("Token", ttProgram, "", 0, 0, 0)
+		loTables = this.parseTables()
+		Return CreateObject("Node", loToken, loTables)
+	EndFunc
+	
+	Hidden function parseTables
+		Local loTables
+		loTables = CreateObject("Collection")
+		
+		Do while !this.isAtEnd() and this.match(ttMinus)
+			this.consume(ttTable, "Se esperaba el atributo 'table'")
+			loTables.Add(this.tableDeclaration())
+		EndDo
+
+		Return loTables
+	EndFunc
+
+	Hidden function declaration
+		Local loNode
+		loNode = .null.
+		Try
+			If IsNull(loNode) and this.match(ttDescription)
+				loNode = this.parseAttribute('description', ttString)
+			EndIf
+			If IsNull(loNode) and this.match(ttFields)
+				loNode = this.parseCollection('fields', .t.)
+			EndIf
+			If IsNull(loNode) and this.match(ttName)
+				loNode = this.parseAttribute('name', ttIdent, ttString)
+			EndIf
+			If IsNull(loNode) and this.match(ttType)
+				loNode = this.parseType()
+			EndIf
+			If IsNull(loNode) and this.match(ttSize)
+				loNode = this.parseAttribute('size', ttNumber)
+			EndIf
+			If IsNull(loNode) and this.match(ttDecimal)
+				loNode = this.parseAttribute('decimal', ttNumber)
+			EndIf			
+			If IsNull(loNode) and this.match(ttPrimaryKey)
+				loNode = this.parseAttribute('primaryKey', ttTrue, ttFalse)
+			EndIf
+			If IsNull(loNode) and this.match(ttAutoIncrement)
+				loNode = this.parseAttribute('autoIncrement', ttTrue, ttFalse)
+			EndIf
+			If IsNull(loNode) and this.match(ttAllowNull)
+				loNode = this.parseAttribute('allowNull', ttTrue, ttFalse)
+			EndIf
+			If IsNull(loNode) and this.match(ttDefault)
+				loNode = this.parseAttribute('default', ttTrue, ttFalse, ttNumber, ttString)
+			EndIf
+			If IsNull(loNode) and this.match(ttForeignKey)
+				loNode = this.parseCollection('foreignKey', .f.)
+			EndIf
+			If IsNull(loNode) and this.match(ttOnDelete)
+				loNode = this.parseAttribute('onDelete', ttCascade, ttNull, ttDefault, ttRestrict)
+			EndIf
+			If IsNull(loNode) and this.match(ttOnUpdate)
+				loNode = this.parseAttribute('onUpdate', ttCascade, ttNull, ttDefault, ttRestrict)
+			EndIf
+			If IsNull(loNode) and this.match(ttFkTable)
+				loNode = this.parseAttribute('fkTable', ttIdent, ttString)
+			EndIf
+			If IsNull(loNode) and this.match(ttFkField)
+				loNode = this.parseAttribute('fkField', ttIdent, ttString)
+			EndIf
+			If IsNull(loNode) and this.match(ttIndex)
+				loNode = this.parseAttribute('index', ttTrue, ttFalse)
+			EndIf
+			If IsNull(loNode) and this.match(ttColumns)
+				loNode = this.parseColumns()
+			EndIf
+			If IsNull(loNode) and this.match(ttSort)
+				loNode = this.parseAttribute('sort', ttAsc, ttDesc)
+			EndIf
+			If IsNull(loNode) and this.match(ttUnique)
+				loNode = this.parseAttribute('unique', ttTrue, ttFalse)
+			EndIf
+		Catch to loEx
+			* TODO(irwin): sinchronyze
+		EndTry
+		If IsNull(loNode)
+			MessageBox("No se pudo encontrar una función de anális para el token: " + tokenName(this.oPeek.nType), 16)
+		EndIf
+		Return loNode
+	EndFunc
+	
+	Hidden function tableDeclaration		
+		Local loToken, loAttributes, loNode
+		loToken = this.oPrevious
+		this.consume(ttColon, "Se esperaba el símbolo ':' luego del atributo 'table'")
+		this.consume(ttNewLine, "Se esperaba un salto de línea")				
+		loAttributes = CreateObject("Collection")
+
+		Do while !this.isAtEnd() and this.oPeek.nKind == tkIdent
+			loNode = this.declaration()
+			If IsNull(loNode)
+				Exit
+			EndIf
+			loAttributes.Add(loNode)
+		EndDo
+				
+		Return CreateObject("Node", loToken, loAttributes)
+	EndFunc
+	
+	Hidden function parseCollection(tcName, tbCheckMinus)
+		Local loToken, loFieldsList, loAttributes, loNode
+		loToken = this.oPrevious
+		this.consume(ttColon, "Se esperaba el símbolo ':' luego del atributo '" + tcName + "'")
+		this.consume(ttNewLine, "Se esperaba un salto de línea")
+		loFieldsList = CreateObject("Collection")
+		
+		Do while !this.isAtEnd()
+			If tbCheckMinus
+				If this.oPeek.nType == ttMinus and this.oPeekNext.nType == ttName
+					this.match(ttMinus)
+				Else
+					exit
+				EndIf
+			EndIf
+			loAttributes = CreateObject("Collection")
+			Do while this.oPeek.nKind == tkIdent
+				loNode = this.declaration()
+				If IsNull(loNode)
+					Exit
+				endif
+				loAttributes.Add(loNode)
+			EndDo
+			loFieldsList.Add(loAttributes)
+			If !tbCheckMinus
+				Exit
+			EndIf
+		EndDo		
+		
+		Return CreateObject("Node", loToken, loFieldsList)
+	EndFunc
+
+	Hidden function parseAttribute(tcName, tnType1, tnType2, tnType3, tnType4)
+		Local loToken, lvValue, i, llMatched
+		loToken = this.oPrevious
+		this.consume(ttColon, "Se esperaba el símbolo ':' luego del atributo '" + tcName + "'")
+		llMatched = .f.
+		
+		For i = 1 to Pcount()-1
+			llMatched = this.match(Evaluate('tnType' + Alltrim(Str(i))))
+			If llMatched
+				exit
+			EndIf
+		EndFor
+		If !llMatched
+			* TODO(irwin): mostrar mensaje
+			MessageBox("Valor inválido para el atributo '" + tcName + "'", 16)
+			Return .null.
+		EndIf
+
+		lvValue = this.oPrevious.vLiteral
+		this.consume(ttNewLine, "Se esperaba un salto de línea")
+
+		Return CreateObject("Node", loToken, lvValue)
+	EndFunc
+	
+	Hidden function parseColumns
+		Set Step On
+		Local loToken, lvValue
+		loToken = this.oPrevious
+		If this.match(ttLeftBracket)
+			lvValue = CreateObject("Collection")
+			Do while !this.isAtEnd()
+				If !this.match(ttString) and !this.match(ttIdent)
+					MessageBox("Se esperaba el nombre de una columna.", 16)
+					Return .null.
+				EndIf
+				lvValue.Add(this.oPrevious)
+				If !this.match(ttComma)
+					Exit
+				EndIf
+			EndDo
+			this.consume(ttRightBracket, "Se esperaba ']' tras el nombre de la columna", 16)
+		Else
+			If !this.match(ttString) and !this.match(ttIdent)
+				MessageBox("Se esperaba el nombre de una columna.", 16)
+				Return .null.
+			EndIf
+			lvValue = this.oPrevious
+		EndIf
+		Return CreateObject("Node", loToken, lvValue)
+	EndFunc
+	
+	Hidden function parseType
+		Local loToken, loTokenType
+		loToken = this.oPrevious
+		this.consume(ttColon, "Se esperaba el símbolo ':' luego del atributo 'type'")	
+		If !Between(this.oPeek.nType, 200, 299)
+			MessageBox("Se esperaba un tipo de dato pero se obtuvo: " + this.oPeek.cLexeme, 16)
+			Return .null.
+		EndIf
+		loTokenType = this.advance()
+		
+		this.consume(ttNewLine, "Se esperaba un salto de línea")
+		Return CreateObject("Node", loToken, loTokenType)
+	EndFunc
+	
+	Hidden function match(t1, t2, t3)
+		Local i		
+		For i=1 to Pcount()
+			If this.check(Evaluate('t' + Alltrim(Str(i))))
+				this.advance()
+				Return .t.
+			endif
+		EndFor
+		Return .f.
+	EndFunc
+	
+	Hidden function consume(tnType, tcMessage)
+		If this.check(tnType)
+			Return this.advance()
+		EndIf
+
+		Error tcMessage
+	EndFunc
+	
+	Hidden function check(tnType)
+		If this.isAtEnd()
+			Return .f.
+		EndIf
+		Return this.oPeek.nType == tnType
+	EndFunc
+	
+	Hidden function advance
+		If !this.isAtEnd()
+			this.nCurrent = this.nCurrent + 1
+		EndIf
+		Return this.oPrevious
+	EndFunc
+	
+	Hidden Function isAtEnd
+		Return this.oPeek.nType == ttEOF
+	EndFunc
+	
+	Hidden Function oPeek_Access
+		Return this.aTokens[this.nCurrent]
+	EndFunc
+	
+	Hidden Function oPeekNext_Access
+		Local lnNext
+		lnNext = this.nCurrent + 1
+		If lnNext <= Alen(this.aTokens)
+			Return this.aTokens[lnNext]
+		EndIf
+		Return Createobject("Token", ttProgram, "", 0, 0, 0)
+	EndFunc	
+	
+	Hidden function oPrevious_Access
+		Return this.aTokens[this.nCurrent-1]
+	EndFunc
+EndDefine
+
+* =================================================================================== *
+* Evaluator Class
+* =================================================================================== *
+Define Class Interpreter as Custom
+	Function interpret(toNode)
+		Local lnType
+		lnType = toNode.oToken.nType
+		Do case
+		Case lnType = ttProgram
+			Return this.evaluateProgram(toNode)
+		Otherwise
+		EndCase
+	EndFunc
+	
+	Hidden function evaluateProgram(toNode)				
+		Return this.evalTable(toNode.vValue)
+	EndFunc
+	
+	Hidden function evalTable(toTable)
+		Local loTablesList
+		loTablesList = CreateObject("Collection")
+				
+		For each loTable in toTable
+			Local loTableData, loFieldFk
+			loTableData = CreateObject("Empty")
+			loFieldFk = CreateObject("Empty")
+			* Table metadata
+			AddProperty(loTableData, "cTableName", "")
+			AddProperty(loTableData, "cTableDescription", "")
+			AddProperty(loTableData, "aTableFields[1]", .null.)
+			* Field metadata
+			AddProperty(loFieldFk, "cTable", "")
+			AddProperty(loFieldFk, "cField", "")
+			AddProperty(loFieldFk, "cCurrentField", "")
+			AddProperty(loFieldFk, "cOnDelete", "DEFAULT")
+			AddProperty(loFieldFk, "cOnUpdate", "DEFAULT")
+
+			For each loAttribute in loTable.vValue
+				Do case
+				Case loAttribute.oToken.nType == ttName
+					loTableData.cTableName = loAttribute.vValue
+				Case loAttribute.oToken.nType == ttDescription
+					loTableData.cTableDescription = loAttribute.vValue
+				Case loAttribute.oToken.nType == ttFields
+					Local laFields[loAttribute.vValue.count, 22], i
+					i = 0
+					For each loNode in loAttribute.vValue
+						i = i + 1
+						* The following are not used values.
+						laFields[i, 3] = 0		 && Size
+						laFields[i, 4] = 0		 && Decimal places (for doble, float)
+						laFields[i, 5] = .t.	 && Allow null values
+						laFields[i, 6] = .f. 	 && Code page translation not allowed
+						laFields[i, 7] = "" 	 && Field validation expression
+						laFields[i, 8] = "" 	 && Field validation text
+						laFields[i, 9] = "" 	 && Field default value
+						laFields[i, 10] = "" 	 && Table validation expression
+						laFields[i, 11] = "" 	 && Table validation text
+						laFields[i, 12] = "" 	 && Long table name
+						laFields[i, 13] = "" 	 && Insert trigger expression
+						laFields[i, 14] = "" 	 && Update trigger expression
+						laFields[i, 15] = "" 	 && Delete trigger expression
+						laFields[i, 16] = ""	 && Description
+						laFields[i, 17] = 0 	 && NextValue for autoincrement
+						laFields[i, 18] = 0 	 && Step for autoincrement
+						laFields[i, 19] = "" 	 && Default value
+						laFields[i, 20] = .f.	 && PrimaryKey
+						laFields[i, 21] = .null. && ForeignKey metadata
+						laFields[i, 22] = .f.	 && AutoIncrement
+
+						For each loField in loNode
+							Do case
+							Case loField.oToken.nType == ttName
+								laFields[i, 1] = loField.vValue
+							Case loField.oToken.nType == ttType
+								laFields[i, 2] = typeToLetter(loField.vValue.vLiteral)
+							Case loField.oToken.nType == ttSize
+								laFields[i, 3] = loField.vValue
+							Case loField.oToken.nType == ttDecimal
+								laFields[i, 4] = loField.vValue
+							Case loField.oToken.nType == ttAllowNull
+								laFields[i, 5] = (loField.vValue == "true")
+							Case loField.oToken.nType == ttDefault
+								laFields[i, 19] = loField.vValue
+							Case loField.oToken.nType == ttDescription
+								laFields[i, 16] = loField.vValue
+							Case loField.oToken.nType == ttAutoIncrement
+								laFields[i, 22] = (loField.vValue == "true")
+							Case loField.oToken.nType == ttPrimaryKey
+								laFields[i, 20] = (loField.vValue == "true")
+							Case loField.oToken.nType == ttForeignKey
+								For each loNode2 in loField.vValue
+									loFieldFk.cTable = ""
+									loFieldFk.cField = ""
+									loFieldFk.cCurrentField = laFields[i, 1]
+									loFieldFk.cOnDelete = "DEFAULT"
+									loFieldFk.cOnUpdate = "DEFAULT"
+
+									For each loField2 in loNode2 
+										Do case
+										Case loField2.oToken.nType == ttFkTable
+											loFieldFk.cTable = loField2.vValue
+										Case loField2.oToken.nType == ttFkField
+											loFieldFk.cField = loField2.vValue
+										Case loField2.oToken.nType == ttOnDelete
+											loFieldFk.cOnDelete = loField2.vValue
+										Case loField2.oToken.nType == ttOnUpdate
+											loFieldFk.cOnUpdate = loField2.vValue
+										Otherwise
+											MessageBox("Atributo inválido para la definición de una clave foránea: `" + tokenName(loField2.oToken.nType) + "`", 16)
+										EndCase					
+									EndFor
+								EndFor
+								laFields[i, 21] = loFieldFk
+							Otherwise
+								MessageBox("Atributo inválido para la definición de un campo: `" + tokenName(loField.oToken.nType) + "`", 16)
+							EndCase
+						EndFor
+					EndFor				
+				Otherwise
+					MessageBox("Atributo inválido para la definición de una tabla: `" + tokenName(loAttribute.oToken.nType) + "`", 16)
+				EndCase			
+			EndFor
+			=Acopy(laFields, loTableData.aTableFields)
+			loTablesList.Add(loTableData)
+		EndFor
+
+		Return loTablesList
+	EndFunc
+	
+*!*		Hidden function evalTable(toTable)
+*!*			Local loTableData, loFieldFk
+*!*			loTableData = CreateObject("Empty")
+*!*			loFieldFk = CreateObject("Empty")
+*!*			* Table metadata
+*!*			AddProperty(loTableData, "cTableName", "")
+*!*			AddProperty(loTableData, "cTableDescription", "")
+*!*			AddProperty(loTableData, "aTableFields[1]", .null.)
+*!*			* Field metadata
+*!*			AddProperty(loFieldFk, "cTable", "")
+*!*			AddProperty(loFieldFk, "cField", "")
+*!*			AddProperty(loFieldFk, "cCurrentField", "")
+*!*			AddProperty(loFieldFk, "cOnDelete", "DEFAULT")
+*!*			AddProperty(loFieldFk, "cOnUpdate", "DEFAULT")
+*!*			
+*!*			For each loTable in toTable
+*!*				*loTable = toTable(1) && Index 1 is the only table.		
+*!*				For each loAttribute in loTable.vValue
+*!*					Do case
+*!*					Case loAttribute.oToken.nType == ttName
+*!*						loTableData.cTableName = loAttribute.vValue
+*!*					Case loAttribute.oToken.nType == ttDescription
+*!*						loTableData.cTableDescription = loAttribute.vValue
+*!*					Case loAttribute.oToken.nType == ttFields
+*!*						Local laFields[loAttribute.vValue.count, 22], i
+*!*						i = 0
+*!*						For each loNode in loAttribute.vValue
+*!*							i = i + 1
+*!*							* The following are not used values.
+*!*							laFields[i, 3] = 0		 && Size
+*!*							laFields[i, 4] = 0		 && Decimal places (for doble, float)
+*!*							laFields[i, 5] = .t.	 && Allow null values
+*!*							laFields[i, 6] = .f. 	 && Code page translation not allowed
+*!*							laFields[i, 7] = "" 	 && Field validation expression
+*!*							laFields[i, 8] = "" 	 && Field validation text
+*!*							laFields[i, 9] = "" 	 && Field default value
+*!*							laFields[i, 10] = "" 	 && Table validation expression
+*!*							laFields[i, 11] = "" 	 && Table validation text
+*!*							laFields[i, 12] = "" 	 && Long table name
+*!*							laFields[i, 13] = "" 	 && Insert trigger expression
+*!*							laFields[i, 14] = "" 	 && Update trigger expression
+*!*							laFields[i, 15] = "" 	 && Delete trigger expression
+*!*							laFields[i, 16] = ""	 && Description
+*!*							laFields[i, 17] = 0 	 && NextValue for autoincrement
+*!*							laFields[i, 18] = 0 	 && Step for autoincrement
+*!*							laFields[i, 19] = "" 	 && Default value
+*!*							laFields[i, 20] = .f.	 && PrimaryKey
+*!*							laFields[i, 21] = .null. && ForeignKey metadata
+*!*							laFields[i, 22] = .f.	 && AutoIncrement
+
+*!*							For each loField in loNode
+*!*								Do case
+*!*								Case loField.oToken.nType == ttName
+*!*									laFields[i, 1] = loField.vValue
+*!*								Case loField.oToken.nType == ttType
+*!*									laFields[i, 2] = typeToLetter(loField.vValue.vLiteral)
+*!*								Case loField.oToken.nType == ttSize
+*!*									laFields[i, 3] = loField.vValue
+*!*								Case loField.oToken.nType == ttDecimal
+*!*									laFields[i, 4] = loField.vValue
+*!*								Case loField.oToken.nType == ttAllowNull
+*!*									laFields[i, 5] = (loField.vValue == "true")
+*!*								Case loField.oToken.nType == ttDefault
+*!*									laFields[i, 19] = loField.vValue
+*!*								Case loField.oToken.nType == ttDescription
+*!*									laFields[i, 16] = loField.vValue
+*!*								Case loField.oToken.nType == ttAutoIncrement
+*!*									laFields[i, 22] = (loField.vValue == "true")
+*!*								Case loField.oToken.nType == ttPrimaryKey
+*!*									laFields[i, 20] = (loField.vValue == "true")
+*!*								Case loField.oToken.nType == ttForeignKey
+*!*									For each loNode2 in loField.vValue
+*!*										loFieldFk.cTable = ""
+*!*										loFieldFk.cField = ""
+*!*										loFieldFk.cCurrentField = laFields[i, 1]
+*!*										loFieldFk.cOnDelete = "DEFAULT"
+*!*										loFieldFk.cOnUpdate = "DEFAULT"
+
+*!*										For each loField2 in loNode2 
+*!*											Do case
+*!*											Case loField2.oToken.nType == ttFkTable
+*!*												loFieldFk.cTable = loField2.vValue
+*!*											Case loField2.oToken.nType == ttFkField
+*!*												loFieldFk.cField = loField2.vValue
+*!*											Case loField2.oToken.nType == ttOnDelete
+*!*												loFieldFk.cOnDelete = loField2.vValue
+*!*											Case loField2.oToken.nType == ttOnUpdate
+*!*												loFieldFk.cOnUpdate = loField2.vValue
+*!*											Otherwise
+*!*												MessageBox("Atributo inválido para la definición de una clave foránea: `" + tokenName(loField2.oToken.nType) + "`", 16)
+*!*											EndCase					
+*!*										EndFor
+*!*									EndFor
+*!*									laFields[i, 21] = loFieldFk
+*!*								Otherwise
+*!*									MessageBox("Atributo inválido para la definición de un campo: `" + tokenName(loField.oToken.nType) + "`", 16)
+*!*								EndCase
+*!*							EndFor
+*!*						EndFor				
+*!*					Otherwise
+*!*						MessageBox("Atributo inválido para la definición de una tabla: `" + tokenName(loAttribute.oToken.nType) + "`", 16)
+*!*					EndCase			
+*!*				EndFor
+*!*			EndFor
+*!*			=Acopy(laFields, loTableData.aTableFields)
+
+*!*			Return loTableData
+*!*		EndFunc
+
+EndDefine
+
+* =================================================================================== *
+* Token Class
+* =================================================================================== *
+Define Class Token As Custom
+	nType = 0
+	nKind = 0
+	cLexeme = ''
+	vLiteral = .Null.
+	nLine = 0
+	nCol = 0
+
+	Procedure Init(tnType, tcLexeme, tvLiteral, tnLine, tnCol)
+		This.nType = tnType
+		This.cLexeme = Iif(Type('tcLexeme') != 'C', '', tcLexeme)
+		This.vLiteral = tvLiteral
+		This.nLine = Iif(Type('tnLine') != 'N', 0, tnLine)
+		this.nCol = Iif(Type('tnCol') != 'N', 0, tnCol)
+	Endproc
+
+	Function toString
+		Try
+			Local lcString
+			lcString = "[" + Alltrim(Str(This.nLine)) + ":" + Alltrim(Str(This.nCol)) + "](" + TokenName(This.nType) + ", " + Transform(This.vLiteral) + ")"
+		Catch to loEx
+			MessageBox(loEx.message)
+		EndTry
+		Return lcString
+	Endfunc
+Enddefine
+
+* =================================================================================== *
+* TokenName
+* =================================================================================== *
+Function tokenName(tnType)
+	DO CASE
+	Case tnType == 100
+		Return "ttTable"
+	Case tnType == 101
+		Return "ttDescription"
+	Case tnType == 102
+		Return "ttFields"
+	Case tnType == 103
+		Return "ttName"
+	Case tnType == 104
+		Return "ttType"
+	Case tnType == 105
+		Return "ttSize"
+	Case tnType == 106
+		Return "ttPrimaryKey"
+	Case tnType == 107
+		Return "ttAllowNull"
+	Case tnType == 108
+		Return "ttDefault"
+	Case tnType == 109
+		Return "ttForeignKey"
+	Case tnType == 110
+		Return "ttFkTable"
+	Case tnType == 111
+		Return "ttFkField"
+	Case tnType == 112
+		Return "ttOnDelete"
+	Case tnType == 113
+		Return "ttOnUpdate"
+	Case tnType == 114
+		Return "ttCascade"
+	Case tnType == 115
+		Return "ttUpdate"
+	Case tnType == 116
+		Return "ttNull"
+	Case tnType == 117
+		Return "ttIndex"
+	Case tnType == 118
+		Return "ttColumns"
+	Case tnType == 119
+		Return "ttSort"
+	Case tnType == 120
+		Return "ttUnique"
+	Case tnType == 121
+		Return "ttAsc"
+	Case tnType == 122
+		Return "ttDesc"
+	Case tnType == 200
+		Return "ttChar"
+	Case tnType == 201
+		Return "ttVarchar"
+	Case tnType == 202
+		Return "ttDecimal"
+	Case tnType == 203
+		Return "ttDate"
+	Case tnType == 204
+		Return "ttDateTime"
+	Case tnType == 205
+		Return "ttDouble"
+	Case tnType == 206
+		Return "ttFloat"
+	Case tnType == 207
+		Return "ttInt"
+	Case tnType == 208
+		Return "ttBool"
+	Case tnType == 209
+		Return "ttText"
+	Case tnType == 210
+		Return "ttVarBinary"
+	Case tnType == 211
+		Return "ttBlob"
+	Case tnType == 21
+		Return "ttIdent"
+	Case tnType == 22
+		Return "ttNumber"
+	Case tnType == 23
+		Return "ttString"
+	Case tnType == 24
+		Return "ttEof"
+	Case tnType == 25
+		Return "ttColon"
+	Case tnType == 26
+		Return "ttMinus"
+	Case tnType == 27
+		Return "ttTrue"
+	Case tnType == 28
+		Return "ttFalse"
+	Case tnType == 29
+		Return "ttAutoIncrement"
+	Case tnType == 30
+		Return "ttNewLine"
+	Case tnType == 31
+		Return "ttProgram"
+	Case tnType == 32
+		Return "ttComma"
+	Case tnType == 33
+		Return "ttLeftBracket"
+	Case tnType == 34
+		Return "ttRightBracket"
+	Otherwise
+	EndCase
+EndFunc
+
+* ========================================================================= *
+* Node
+* ========================================================================= *
+Define Class Node as Custom
+	oToken = .null.
+	vValue = .null.
+	
+	Procedure init(toToken, tvValue)
+		this.oToken = toToken
+		this.vValue = tvValue
+	endproc
+EndDefine
+
+* ======================================================================== *
+* Class RemoteCursor
+* ======================================================================== *
+Define Class RemoteCursor As CursorAdapter
+	Database = ""
+	Alias = ""
+	SelectCmd = ""
+	Tables = ""
+	KeyFieldList = ""
+	SendUpdates = .f.
+	Nodata = .f.
+EndDefine
+
+* ======================================================================== *
+* Function typeToLetter
+* ======================================================================== *
+Function typeToLetter(tcType)
+	tcType = Lower(tcType)
+	DO CASE
+	CASE tcType == "char"
+		Return "C"
+	CASE tcType == "currency"
+		Return "Y"
+	CASE tcType == "date"
+		Return "D"
+	CASE tcType == "datetime"
+		Return "T"
+	CASE tcType == "double"
+		Return "B"
+	CASE tcType == "float"
+		Return "F"
+	CASE tcType == "int"
+		Return "I"
+	CASE tcType == "bool"
+		Return "L"
+	CASE tcType == "text"
+		Return "M"
+	CASE tcType == "numeric"
+		Return "N"
+	CASE tcType == "varbinary"
+		Return "Q"
+	CASE InList(tcType, "string", "varchar")
+		Return "V"
+	CASE tcType == "blob"
+		Return "W"
+	OTHERWISE
+		MessageBox("Tipo de dato desconocido: '" + tcType + "'")
+		Return Space(1)
+	ENDCASE
+EndFunc
+
 * ======================================================================== *
 * Class DBEngine
 * ======================================================================== *
 Define Class DBEngine As Custom
 
-	cDriver = ""
-	cServer = ""
-	cUser = ""
-	cPassword = ""
-	cDatabase = ""
-	nPort = 0
-	cVersion = "0.0.1"
-	bUseCA = .T.
+	cDriver		= ""
+	cServer		= ""
+	cUser		= ""
+	cPassword	= ""
+	cDatabase 	= ""
+	nPort		= 0
+	cVersion	= "0.0.1"
+	bUseCA		= .T.
+	bUseDelimiter = .F.
+	cPKName		= "TID"
 
 	Dimension aCustomArray[1]
 	Hidden nCounter
@@ -56,6 +1254,9 @@ Define Class DBEngine As Custom
 	Endproc
 	
 	Function newDataBase(tcDataBase)
+		If Lower(this.Name) == "firebird"
+			Return .t.
+		EndIf
 		Local lcScript, lcCursor, lcDBName
 		lcCursor = Sys(2015)
 		lcScript = this.getDataBaseExistsScript(tcDataBase)
@@ -186,6 +1387,7 @@ Define Class DBEngine As Custom
 		If Empty(tcAlias)
 			tcAlias = Alias()
 		EndIf
+
 		Select (tcAlias)		
 		Local lnIndex, loView, lcCursor
 		lnIndex = This.oViews.GetKey(Lower(tcAlias))
@@ -304,7 +1506,7 @@ Define Class DBEngine As Custom
 						lcValuesScript = Space(1)
 
 						For j=1 To Alen(laInsFields, 1)
-							If Upper(laInsFields[j]) == "TID"
+							If Upper(laInsFields[j]) == Upper(this.cPKName)
 								Loop
 							EndIf
 							lcFieldsScript = lcFieldsScript + lcOpenChar + laInsFields[j] + lcCloseChar + ','
@@ -354,7 +1556,7 @@ Define Class DBEngine As Custom
 			Return .F.
 		Endif
 
-		lcScript = 'set datasession to ' + Alltrim(Str(Set("Datasession"))) + Chr(13) + Chr(10)
+		lcScript = 'set datasession to ' + Alltrim(Str(Set("Datasession"))) + CRLF
 		loViews = This.oGroupViews.Item(lnIndex)
 		If Empty(loViews.Count)
 			Return .F.
@@ -372,8 +1574,8 @@ Define Class DBEngine As Custom
 			If !loView.SendUpdates
 				Loop && Ignore cursor
 			Endif
-			lcScript = lcScript + "select " + loView.Alias + Chr(13) + Chr(10)
-			lcScript = lcScript + "=TableRevert(.T.) " + Chr(13) + Chr(10)
+			lcScript = lcScript + "select " + loView.Alias + CRLF
+			lcScript = lcScript + "=TableRevert(.T.) " + CRLF
 			Select (loView.Alias)
 			lbOk = Tableupdate(.T.)
 			If !lbOk
@@ -484,11 +1686,10 @@ Define Class DBEngine As Custom
 	Procedure migrate(tcTableOrPath)
 		Local lbCloseTable, laTables[1], i, j, k, lcTableName, lcTablePath, lcPathAct, ;
 			lcFieldsScript, lcValuesScript, lcOpenChar, lcCloseChar, lcDateAct, laDateFields[1], ;
-			lcMarkAct, lcCenturyAct, loEnv, lcScript, lbMigrateDBC
-
+			lcMarkAct, lcCenturyAct, loEnv, lcScript, lbMigrateDBC, loTMGObject, lcTableDescription
 
 		lcPathAct = Set("Default")
-
+		lcTableDescription = ""
 		If Directory(tcTableOrPath)
 			Set Default To (Addbs(tcTableOrPath))
 			=Adir(laDBFList, "*.dbf")
@@ -501,62 +1702,111 @@ Define Class DBEngine As Custom
 			Store 0 to i, j
 			Release laDBFList
 		Else
-			If !InList(Upper(JustExt(tcTableOrPath)), "DBC", "DBF")
-				MessageBox("Solo se permiten migraciones de ficheros DBF o DBC", 16)
+			If !InList(Upper(JustExt(tcTableOrPath)), "DBC", "DBF", "TMG")
+				MessageBox("Solo se permiten migraciones de ficheros DBF, DBC o TMG", 16)
 				Return .f.
 			EndIf
-			
-			If Upper(JustExt(tcTableOrPath)) == "DBC"
+
+			Do case
+			case Upper(JustExt(tcTableOrPath)) == "DBC"
 				Open Database (tcTableOrPath) Shared
 				=ADBObjects(laTables, "TABLE")
 				lbMigrateDBC = .T.
-			Else
+			Case Upper(JustExt(tcTableOrPath)) == "TMG"
+				Local lcScript
+				lcScript = Strconv(FileToStr(tcTableOrPath), 11)
+				If Right(lcScript, 1) != Chr(10)
+					lcScript = lcScript + Chr(13) + Chr(10)
+				EndIf
+				defineConstants()
+				Local loScanner, laTokens, llPrintTokens
+				loScanner 	  = Createobject("Scanner", lcScript)
+				laTokens 	  = loScanner.scanTokens()
+				llPrintTokens = .f.	
+				If llPrintTokens
+					lcFile = "F:\Desarrollo\Mini_ERP\rutinas\tokens.txt"
+					If File(lcFile)
+						try
+							Delete File &lcFile
+						Catch
+						EndTry
+					EndIf
+					For Each loToken In laTokens
+						lcText = loToken.toString()
+						lcText = lcText + CRLF
+						=StrToFile(lcText, lcFile, 1)
+					EndFor
+					Modify File (lcFile)
+					return
+				EndIf
+
+				Local loParser, loStatements, loEvaluator, z
+				loParser 	 = CreateObject("Parser", @laTokens)
+				loStatements = loParser.parse()
+				loEvaluator  = CreateObject("Interpreter")
+				loTMGObject  = loEvaluator.interpret(loStatements)
+				Dimension laTables[loTMGObject.count]
+				For z=1 to loTMGObject.count
+					laTables[z]  = loTMGObject(z).cTableName
+				EndFor
+			Case Upper(JustExt(tcTableOrPath)) == "DBF"
 				laTables[1]  = tcTableOrPath
-			EndIf
+			EndCase
 		Endif
 
 		lcOpenChar = This.getOpenNameSymbol()
 		lcCloseChar = This.getCloseNameSymbol()
 		
 		loEnv = this.setEnvironment()
-
 		For i = 1 To Alen(laTables,1)
 			lcTablePath = laTables[i]
-			lcTableName = Juststem(lcTablePath)
-			If !Used(lcTableName)
-				lbCloseTable = .T.
-				Use (lcTablePath) In 0
-			Endif
 			Try
-				=Afields(laFields, lcTableName)
+				If Type('loTMGObject') != 'O'
+					lcTableName = Juststem(lcTablePath)
+					If !Used(lcTableName)
+						lbCloseTable = .T.
+						Use (lcTablePath) In 0
+					EndIf
+					=Afields(laFields, lcTableName)
+				Else
+					Local laFields[1]
+					lcTableName 		= loTMGObject(i).cTableName
+					lcTableDescription 	= loTMGObject(i).cTableDescription
+					Acopy(loTMGObject(i).aTableFields, laFields)
+				EndIf				
+
 				laDateFields = this.getDateTimeFields(@laFields)
+
 				If This.tableExists(lcTableName)
-					lcScript = "DROP TABLE " + lcOpenChar + lcTableName + lcCloseChar
-					This.SQLExec(lcScript)
+					If !this.sqlExec(this.dropTable(lcTableName))
+						Return
+					EndIf
 				Endif
-				This.createTable(lcTableName, @laFields)
-
-				* Iterate fields
-				lcFieldsScript = Space(1)
-				lcValuesScript = Space(1)
-
-				For j=1 To Alen(laFields, 1)
-					lcFieldsScript = lcFieldsScript + lcOpenChar + laFields[j, 1] + lcCloseChar + ','
-					lcValuesScript = lcValuesScript + '?loRow.' + laFields[j, 1] + ','
-				EndFor
+				This.createTable(lcTableName, lcTableDescription, @laFields)
 				
-				lcFieldsScript = Substr(lcFieldsScript, 1, Len(lcFieldsScript)-1)
-				lcValuesScript = Substr(lcValuesScript, 1, Len(lcValuesScript)-1)
+				If Type('loTMGObject') != 'O' && <<TMG SCRIPTS does not insert values>>
+					* Iterate fields
+					lcFieldsScript = Space(1)
+					lcValuesScript = Space(1)
 
-				* Insert values
-				Select (lcTableName)
-				Scan
-					Scatter Memo Name loRow
-					this.updateFetchedRow(@laDateFields, loRow)
-					lcScript = "INSERT INTO " + lcOpenChar + lcTableName + lcCloseChar + " (" + lcFieldsScript + ")"
-					lcScript = lcScript + " VALUES (" + lcValuesScript + ");"
-					This.SQLExec(lcScript)
-				Endscan
+					For j=1 To Alen(laFields, 1)
+						lcFieldsScript = lcFieldsScript + lcOpenChar + laFields[j, 1] + lcCloseChar + ','
+						lcValuesScript = lcValuesScript + '?loRow.' + laFields[j, 1] + ','
+					EndFor
+					
+					lcFieldsScript = Substr(lcFieldsScript, 1, Len(lcFieldsScript)-1)
+					lcValuesScript = Substr(lcValuesScript, 1, Len(lcValuesScript)-1)
+
+					* Insert values
+					Select (lcTableName)
+					Scan
+						Scatter Memo Name loRow
+						this.updateFetchedRow(@laDateFields, loRow)
+						lcScript = "INSERT INTO " + lcOpenChar + lcTableName + lcCloseChar + " (" + lcFieldsScript + ")"
+						lcScript = lcScript + " VALUES (" + lcValuesScript + ");"
+						This.SQLExec(lcScript)
+					EndScan
+				EndIf
 			Catch To loEx
 				This.printException(loEx)
 			Endtry
@@ -573,34 +1823,32 @@ Define Class DBEngine As Custom
 	Endproc
 
 	Function SQLExec(tcSQLCommand, tcCursorName)
+
 		If Empty(tcCursorName)
 			tcCursorName = Sys(2015)
 		Endif
-		Local lnResult
-		lnResult = 0
-		Try
-			lnResult = SQLExec(This.nHandle, tcSQLCommand, tcCursorName)
-		Catch To loEx
-			This.printException(loEx)
-		Endtry
 
-		If lnResult <= 0
+		If SQLExec(This.nHandle, tcSQLCommand, tcCursorName) <= 0
 			=Aerror(laSqlError)
-			Messagebox("SQL ERROR: " + laSqlError[2] + Chr(13) + Chr(10) + "QUERY: " + tcSQLCommand, 16, "Error de comunicación")
+			Messagebox("SQL ERROR: " + laSqlError[2] + Transform(laSqlError[3]) + CRLF + "QUERY: " + tcSQLCommand, 16, "Error de comunicación")
+			Return .f.
 		Endif
-		Return lnResult > 0
+
+		Return .t.
 	Endfunc
 
-	Procedure createTable(tcTableName, taFields)
+	Procedure createTable(tcTableName, tcTableDescription, taFields)
 		Local i, lcScript, lcType, lcName, lcSize, lcDecimal, lbAllowNull, lcLongName, ;
-			lcComment, lnNextValue, lnStepValue, lcDefault, lcOpenChar, lcCloseChar, loFields
-
-		lcOpenChar = This.getOpenNameSymbol()
-		lcCloseChar = This.getCloseNameSymbol()
-
-		lcScript  = "CREATE TABLE " + lcOpenChar + tcTableName + lcCloseChar
-		lcScript  = lcScript + " ("
-		lcScript  = lcScript + lcOpenChar + "TID" + lcCloseChar + Space(1) + This.getGUIDDescription()
+			lcComment, lnNextValue, lnStepValue, lcDefault, lcOpenChar, lcCloseChar, loFields, lcFkScript, ;
+			lcFieldsScript, lcInternalID, lbInsertInternalID
+		
+		lcOpenChar  		= This.getOpenNameSymbol()
+		lcCloseChar 		= This.getCloseNameSymbol()
+		lcFkScript  		= ''
+		lcFieldsScript 		= ''
+		lcInternalID  		= lcOpenChar + this.cPKName + lcCloseChar + Space(1) + This.getGUIDDescription()
+		lbInsertInternalID 	= .T.
+		
 		lcDefault = Space(1)
 		loFields  = Createobject("Empty")
 		=AddProperty(loFields, "name", "")
@@ -613,43 +1861,108 @@ Define Class DBEngine As Custom
 		=AddProperty(loFields, "nextValue", 0)
 		=AddProperty(loFields, "stepValue", 0)
 		=AddProperty(loFields, "default", "")
+		=AddProperty(loFields, "autoIncrement", .F.)
+		=AddProperty(loFields, "primaryKey", .F.)
 		=AddProperty(loFields, "addDefault", .T.)
+		=AddProperty(loFields, "foreignKey", .null.)
 
 		For i = 1 To Alen(taFields, 1)
-			loFields.Name = taFields[i, 1]
-			loFields.Type = taFields[i, 2]
-			loFields.Size = Alltrim(Str(taFields[i, 3]))
-			loFields.Decimal = Alltrim(Str(taFields[i, 4]))
-			loFields.allowNull = taFields[i, 5]
-			loFields.longName = taFields[i, 12]
-			loFields.Comment = taFields[i, 16]
-			loFields.Nextvalue = taFields[i, 17]
-			loFields.stepValue = taFields[i, 18]
+			loFields.Name 		= taFields[i, 1]
+			loFields.Type 		= taFields[i, 2]
+			loFields.Size 		= Alltrim(Str(taFields[i, 3]))
+			loFields.Decimal 	= Alltrim(Str(taFields[i, 4]))
+			loFields.allowNull 	= taFields[i, 5]
+			loFields.longName 	= taFields[i, 12]
+			loFields.Comment 	= taFields[i, 16]
+			loFields.Nextvalue 	= taFields[i, 17]
+			loFields.stepValue 	= taFields[i, 18]
 			loFields.addDefault = .T.
-			loFields.Default = "''"
+			
+			loFields.Default 		= "''"
+			loFields.primaryKey 	= .f.
+			loFields.foreignKey 	= .null.
+			loFields.autoIncrement 	= .f.
+			
+			* Validate types with mandatory length
+			If InList(Upper(loFields.Type), 'C') and Empty(Val(loFields.Size))
+				MessageBox("El tipo de dato CHAR requiere su longitud.", 48)
+				loop
+			EndIf
+			
+			If Type('taFields[i, 19]') != 'U'
+				If taFields[i, 19] != "''"
+					loFields.Default = "'" + taFields[i, 19] + "'"
+				EndIf
 
-			lcScript = lcScript + ", "
+				loFields.primaryKey 	= taFields[i, 20]
+				loFields.foreignKey 	= taFields[i, 21]
+				loFields.autoIncrement 	= taFields[i, 22]
+			EndIf
+			If i > 1
+				lcFieldsScript = lcFieldsScript + ', '
+			EndIf
 
-			lcScript = lcScript + lcOpenChar + loFields.Name + lcCloseChar + Space(1)
+			lcFieldsScript = lcFieldsScript + lcOpenChar + loFields.Name + lcCloseChar + Space(1)
 			lcMacro = "this.visit" + loFields.Type + "Type(loFields)"
 			lcValue = &lcMacro
-			lcScript = lcScript + lcValue
+			lcFieldsScript = lcFieldsScript + lcValue
 
+			If loFields.autoIncrement
+				lbInsertInternalID = .F.
+				lcFieldsScript = lcFieldsScript + ' ' + this.addAutoIncrement()
+			EndIf
+			
 			If !loFields.allowNull
-				lcScript = lcScript + " NOT NULL "
 				If loFields.addDefault
-					lcScript = lcScript + " DEFAULT " + loFields.Default
-				Endif
-			Endif
-		Endfor
-		lcScript = lcScript + ") " + This.createTableOptions()
+					lcFieldsScript = lcFieldsScript + " DEFAULT " + loFields.Default
+				EndIf
+				lcFieldsScript = lcFieldsScript + " NOT NULL "				
+			EndIf
+			
+			If loFields.primaryKey
+				lcFieldsScript = lcFieldsScript + ' ' + this.addPrimaryKey()
+			EndIf									
+
+			If !Empty(loFields.comment)
+				lcFieldsScript = lcFieldsScript + this.addFieldComment(loFields.comment)
+			EndIf
+			
+			If !IsNull(loFields.foreignKey)
+				If !Empty(lcFkScript)
+					lcFkScript = lcFkScript + ','
+				EndIf
+				lcFkScript = lcFkScript + ' ' + this.addForeignKey(loFields.foreignKey)
+			EndIf
+		EndFor
+
+		lcScript = "CREATE TABLE " + lcOpenChar + tcTableName + lcCloseChar + '('
+		If lbInsertInternalID
+			lcScript = lcScript + lcInternalID + ','
+		EndIf
+		lcScript = lcScript + lcFieldsScript
+
+		If !Empty(lcFkScript)
+			lcScript = lcScript + ',' + lcFkScript
+		EndIf
+
+		lcScript = lcScript + ') ' + This.createTableOptions()
+		
+		If !Empty(tcTableDescription)
+			lcScript = lcScript + this.addTableComment(tcTableDescription)
+		EndIf
+
+		* POLICIA
+		_cliptext = lcScript
+		MessageBox(lcScript)
+		* POLICIA
+		
 		Return This.SQLExec(lcScript)
 	Endproc
 
 	Procedure sqlError
 		Local Array laError[2]
 		Aerror(laError)
-		Messagebox("ERROR: " + Alltrim(Str(laError[1])) + Chr(13) + Chr(10) + "MESSAGE:" + Transform(laError[2]), 16, "ERROR")
+		Messagebox("ERROR: " + Alltrim(Str(laError[1])) + CRLF + "MESSAGE:" + Transform(laError[2]) + Transform(laError[3]), 16, "ERROR")
 	Endproc
 
 	Hidden function updateRowScript(tcOpenChar, tcCloseChar, tcSQLTable, tcKeyField, tcFldState)
@@ -711,10 +2024,10 @@ Define Class DBEngine As Custom
 	EndProc
 	
 	Hidden function getKeyField(tcTable)
-		If !this.fieldExists(tcTable, "TID")
+		If !this.fieldExists(tcTable, this.cPKName)
 			Return this.getPrimaryKey(tcTable)
 		EndIf
-		Return "TID"
+		Return this.cPKName
 	EndFunc 
 
 	Hidden function getSelectCommand(tcTable, tcFields, tcCriteria)
@@ -772,7 +2085,7 @@ Define Class DBEngine As Custom
 		EndFor
 		Return @this.aCustomArray
 	EndFunc	
-
+	
 	Hidden procedure updateFetchedRow(taDateFields, toRow)
 		If Type('taDateFields[1]') == 'C'
 			Local i, lcMacro
@@ -808,13 +2121,13 @@ Define Class DBEngine As Custom
 	Hidden Procedure printException(toError)
 		Local lcMsg
 		lcMsg = Padr("Error:", 20, Space(1)) + Alltrim(Str(toError.ErrorNo))
-		lcMsg = lcMsg + Chr(13) + Padr("LineNo:", 20, Space(1)) + Alltrim(Str(toError.Lineno))
-		lcMsg = lcMsg + Chr(13) + Padr("Message:", 20, Space(1)) + Alltrim(toError.Message)
-		lcMsg = lcMsg + Chr(13) + Padr("Procedure:", 20, Space(1)) + Alltrim(toError.Procedure)
-		lcMsg = lcMsg + Chr(13) + Padr("Details:", 20, Space(1)) + Alltrim(toError.Details)
-		lcMsg = lcMsg + Chr(13) + Padr("StackLevel:", 20, Space(1)) + Alltrim(Str(toError.StackLevel))
-		lcMsg = lcMsg + Chr(13) + Padr("LineContents:", 20, Space(1)) + Alltrim(toError.LineContents)
-		lcMsg = lcMsg + Chr(13) + Padr("UserValue:", 20, Space(1)) + Alltrim(toError.UserValue)
+		lcMsg = lcMsg + CRLF + Padr("LineNo:", 20, Space(1)) + Alltrim(Str(toError.Lineno))
+		lcMsg = lcMsg + CRLF + Padr("Message:", 20, Space(1)) + Alltrim(toError.Message)
+		lcMsg = lcMsg + CRLF + Padr("Procedure:", 20, Space(1)) + Alltrim(toError.Procedure)
+		lcMsg = lcMsg + CRLF + Padr("Details:", 20, Space(1)) + Alltrim(toError.Details)
+		lcMsg = lcMsg + CRLF + Padr("StackLevel:", 20, Space(1)) + Alltrim(Str(toError.StackLevel))
+		lcMsg = lcMsg + CRLF + Padr("LineContents:", 20, Space(1)) + Alltrim(toError.LineContents)
+		lcMsg = lcMsg + CRLF + Padr("UserValue:", 20, Space(1)) + Alltrim(toError.UserValue)
 
 		Messagebox(lcMsg, 16)
 	Endproc
@@ -884,7 +2197,9 @@ Define Class DBEngine As Custom
 		Local lcQuery, lcSchema, lcCursor
 		lcCursor = Sys(2015)
 		This.selectDatabase()
+
 		lcQuery = this.getTableExistsScript(tcTableName)
+
 		If !This.SQLExec(lcQuery, lcCursor)
 			Return .F.
 		Endif
@@ -924,7 +2239,9 @@ Define Class DBEngine As Custom
 		This.SQLExec(this.getServerDateScript(), lcCursor)
 
 		ldDate = &lcCursor..sertime
+
 		Use In (lcCursor)
+
 		Return ldDate
 	Endfunc
 
@@ -1012,7 +2329,7 @@ Define Class DBEngine As Custom
 	Function formatDateOrDateTime(tdValue)
 		* Abstract
 	Endfunc
-	
+
 	Function getLastID
 		Local lcScript, lcCursor, lnID
 		lcCursor = Sys(2015)
@@ -1025,6 +2342,7 @@ Define Class DBEngine As Custom
 			Return 0
 		EndIf
 		Return lnID
+
 	EndFunc
 
 	Function getCreateDatabaseScript(tcDatabase)
@@ -1035,6 +2353,34 @@ Define Class DBEngine As Custom
 		* Abstract
 	EndFunc
 	
+	Function addFieldComment(tcComment)
+		* Abstract
+	EndFunc
+	
+	Function addTableComment(tcComment)
+		* Abstract
+	EndFunc
+	
+	Function addForeignKey(toFkData)
+		* Abstract
+	EndFunc
+	
+	Function getForeignKeyValue(tcValue)
+		* Abstract
+	EndFunc
+	
+	Function addAutoIncrement
+		* Abstract
+	EndFunc
+	
+	Function addPrimaryKey
+		* Abstract
+	EndFunc
+	
+	function dropTable(tcTable)
+		* Abstract
+	endfunc
+
 	Function visitCType(toFields)
 		* Abstract
 	Endfunc
@@ -1107,6 +2453,7 @@ Define Class MSSQL As DBEngine
 		This.SQLExec("SELECT @@VERSION AS 'VER'", lcCursor)
 		lcVersion = &lcCursor..VER
 		Use In (lcCursor)
+
 		Return lcVersion
 	Endfunc
 
@@ -1117,6 +2464,7 @@ Define Class MSSQL As DBEngine
 		If This.nPort > 0
 			lcConStr = lcConStr + ";PORT=" + Alltrim(Str(This.nPort))
 		Endif
+
 		Return lcConStr
 	Endfunc
 
@@ -1136,11 +2484,17 @@ Define Class MSSQL As DBEngine
 	Endproc
 
 	Function getOpenNameSymbol
-		Return "["
+		If this.bUseDelimiter
+			Return "["
+		EndIf
+		Return ""
 	Endfunc
 
 	Function getCloseNameSymbol
-		Return "]"
+		If this.bUseDelimiter
+			Return "]"
+		EndIf
+		Return ""
 	Endfunc
 
 	Function getTableExistsScript(tcTableName)
@@ -1273,12 +2627,79 @@ Define Class MSSQL As DBEngine
 	EndFunc
 
 	Function getCreateDatabaseScript(tcDatabase)
-		Return "CREATE DATABASE [" + tcDatabase + "];"
+		Local lcLeft, lcRight
+		Store "" to lcLeft, lcRight
+		
+		If this.bUseDelimiter
+			lcLeft = This.getOpenNameSymbol()
+			lcRight = This.getCloseNameSymbol()
+		EndIf
+			
+		Return "CREATE DATABASE " + lcLeft + tcDatabase + lcRight + ";"
 	EndFunc
 	
 	Function getDataBaseExistsScript(tcDatabase)
 		Return "select NAME AS dbName from sys.databases where name = '" + tcDatabase + "'"
 	EndFunc
+
+	Function addFieldComment(tcComment)
+		Return " "
+	EndFunc
+
+	Function addTableComment(tcComment)
+		Return " "
+	EndFunc
+
+	Function addForeignKey(toFkData)
+		Local lcScript, lcOnUpdate, lcOnDelete, lcLeft, lcRight
+		lcOnUpdate = this.getForeignKeyValue(toFkData.cOnUpdate)
+		lcOnDelete = this.getForeignKeyValue(toFkData.cOnDelete)
+		Store "" to lcLeft, lcRight
+		
+		If this.bUseDelimiter
+			lcLeft = This.getOpenNameSymbol()
+			lcRight = This.getCloseNameSymbol()
+		EndIf
+				
+		Text to lcScript noshow pretext 7 textmerge
+		FOREIGN KEY (<<lcLeft>><<toFkData.cCurrentField>><<lcRight>>) REFERENCES <<lcLeft>><<toFkData.cTable>><<lcRight>>(<<lcLeft>><<toFkData.cField>><<lcRight>>)
+		ON UPDATE <<lcOnUpdate>>
+		ON DELETE <<lcOnDelete>>
+		endtext
+		Return lcScript
+	EndFunc
+
+	Function getForeignKeyValue(tcValue)
+		Do case
+		Case upper(tcValue) == 'NULL'
+			Return 'SET NULL'
+		Case upper(tcValue) == 'DEFAULT'
+			Return 'SET DEFAULT'
+		Case upper(tcValue) == 'RESTRICT'
+			Return 'NO ACTION'
+		EndCase
+		Return tcValue
+	EndFunc
+	
+	Function addAutoIncrement
+		Return "IDENTITY(1,1)"
+	EndFunc
+	
+	Function addPrimaryKey
+		Return "PRIMARY KEY"
+	EndFunc	
+	
+	function dropTable(tcTable)	
+		Local lcOpenChar, lcCloseChar
+		Store "" to lcOpenChar, lcCloseChar
+		
+		If this.bUseDelimiter
+			lcOpenChar  = This.getOpenNameSymbol()
+			lcCloseChar = This.getCloseNameSymbol()
+		EndIf
+		
+		Return "DROP TABLE " + lcOpenChar + tcTable + lcCloseChar + " IF EXISTS;"
+	endfunc
 
 	* C = Character
 	Function visitCType(toFields)
@@ -1355,7 +2776,7 @@ Define Class MSSQL As DBEngine
 
 	* V = Varchar
 	Function visitVType(toFields)
-		Return "VARCHAR(" + toFields.Size + ") COLLATE Latin1_General_CI_AI"
+		Return "VARCHAR(" + Iif(Empty(Val(toFields.Size)), 'max', toFields.Size) + ") COLLATE Latin1_General_CI_AI"
 	Endfunc
 
 	* W = Blob
@@ -1380,6 +2801,7 @@ Define Class MySQL As DBEngine
 		This.SQLExec("SELECT Version() AS 'VER'", lcCursor)
 		lcVersion = &lcCursor..VER
 		Use In (lcCursor)
+
 		Return lcVersion
 	Endfunc
 
@@ -1390,6 +2812,7 @@ Define Class MySQL As DBEngine
 		If This.nPort > 0
 			lcConStr = lcConStr + ";PORT=" + Alltrim(Str(This.nPort))
 		Endif
+
 		Return lcConStr
 	Endfunc
 
@@ -1409,11 +2832,17 @@ Define Class MySQL As DBEngine
 	Endproc
 
 	Function getOpenNameSymbol
-		Return '`'
+		If this.bUseDelimiter
+			Return '`'
+		EndIf
+		Return ""
 	Endfunc
 
 	Function getCloseNameSymbol
-		Return '`'
+		If this.bUseDelimiter
+			Return '`'
+		EndIf
+		Return ""
 	Endfunc
 
 	Function getTableExistsScript(tcTableName)
@@ -1433,7 +2862,7 @@ Define Class MySQL As DBEngine
 	Endproc
 
 	Function getGUIDDescription
-		Return "int(20) unsigned zerofill primary key NOT NULL auto_increment"
+		Return "int unsigned primary key NOT NULL auto_increment"
 	Endfunc
 
 	Function getFieldExistsScript(tcTable, tcField)
@@ -1495,7 +2924,7 @@ Define Class MySQL As DBEngine
 	Endproc
 
 	Function createTableOptions
-		Return "ENGINE = MyISAM AUTO_INCREMENT = 0 DEFAULT CHARSET = latin1"
+		Return "ENGINE = InnoDB AUTO_INCREMENT = 0 DEFAULT CHARSET = latin1"
 	Endfunc
 
 	function setEnvironment
@@ -1538,17 +2967,80 @@ Define Class MySQL As DBEngine
 	EndFunc
 
 	Function getCreateDatabaseScript(tcDatabase)
-		Return "CREATE DATABASE `" + tcDatabase + "` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
+		Local lcOpenChar, lcCloseChar
+		Store "" to lcOpenChar, lcCloseChar
+		
+		If this.bUseDelimiter
+			lcOpenChar  = This.getOpenNameSymbol()
+			lcCloseChar = This.getCloseNameSymbol()
+		EndIf
+		
+		Return "CREATE DATABASE " + lcOpenChar + tcDatabase + lcCloseChar + " DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
 	EndFunc
 	
 	Function getDataBaseExistsScript(tcDatabase)
 		Return "SELECT CATALOG_NAME AS dbName FROM information_schema.schemata WHERE schema_name = '" + tcDatabase + "'"
 	EndFunc
 
+	Function addFieldComment(tcComment)
+		Return " COMMENT '" + tcComment + "'"
+	EndFunc
+	
+	Function addTableComment(tcComment)
+		Return " COMMENT '" + tcComment + "'"
+	EndFunc	
+
+	Function addForeignKey(toFkData)
+		Local lcScript, lcOnUpdate, lcOnDelete, lcOPen, lcClose
+		lcOnUpdate = this.getForeignKeyValue(toFkData.cOnUpdate)
+		lcOnDelete = this.getForeignKeyValue(toFkData.cOnDelete)
+		Store "" to lcOPen, lcClose
+		
+		If this.bUseDelimiter
+			lcOPen  = This.getOpenNameSymbol()
+			lcClose = This.getCloseNameSymbol()
+		EndIf
+				
+		Text to lcScript noshow pretext 7 textmerge
+		FOREIGN KEY (<<lcOPen>><<toFkData.cCurrentField>><<lcClose>>) REFERENCES <<lcOPen>><<toFkData.cTable>><<lcClose>>(<<lcOPen>><<toFkData.cField>><<lcClose>>)
+		ON UPDATE <<lcOnUpdate>>
+		ON DELETE <<lcOnDelete>>
+		endtext		
+		Return lcScript
+	EndFunc
+
+	Function getForeignKeyValue(tcValue)
+		Do case
+		Case upper(tcValue) == 'NULL'
+			Return 'SET NULL'
+		Case upper(tcValue) == 'DEFAULT'
+			Return 'SET DEFAULT'
+		EndCase
+		Return tcValue
+	EndFunc
+
+	Function addAutoIncrement
+		Return "AUTO_INCREMENT"
+	EndFunc
+	
+	Function addPrimaryKey
+		Return "PRIMARY KEY"
+	EndFunc	
+
+	function dropTable(tcTable)
+		Local lcOPen, lcClose
+		Store "" to lcOPen, lcClose
+		
+		If this.bUseDelimiter
+			lcOPen  = This.getOpenNameSymbol()
+			lcClose = This.getCloseNameSymbol()
+		EndIf
+		Return "DROP TABLE " + lcOPen + tcTable + lcClose + " IF EXISTS;"
+	endfunc
+	
 	* C = Character
 	Function visitCType(toFields)
-		* Return "VARCHAR(" + toFields.Size + ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-		Return "VARCHAR(" + toFields.Size + ")"
+		Return "CHAR(" + toFields.Size + ")"
 	Endfunc
 
 	* Y = Currency
@@ -1639,15 +3131,378 @@ Define Class MySQL As DBEngine
 	Endfunc
 EndDefine
 
-* ======================================================================== *
-* Class RemoteCursor
-* ======================================================================== *
-Define Class RemoteCursor As CursorAdapter
-	Database = ""
-	Alias = ""
-	SelectCmd = ""
-	Tables = ""
-	KeyFieldList = ""
-	SendUpdates = .f.
-	Nodata = .f.
+* ==================================================== *
+* FireBird
+* ==================================================== *
+Define Class Firebird As DBEngine
+
+    Function getDummyQuery
+        Return "SELECT 1 FROM RDB$DATABASE"
+    Endfunc
+
+    Function getVersion
+        Local lcCursor, lcVersion
+        lcCursor = Sys(2015)
+        This.SQLExec("SELECT RDB$GET_CONTEXT('SYSTEM', 'ENGINE_VERSION') AS 'VER' FROM RDB$DATABASE", lcCursor)
+        lcVersion = &lcCursor..VER
+        Use In (lcCursor)
+
+        Return lcVersion
+    Endfunc
+
+    Function getConnectionString
+        Local lcConStr, lcPort
+        lcConStr = "DRIVER=" + this.cDriver + ";DBNAME=" + This.cDatabase + ";UID=" + This.cUser + ";PWD=" + This.cPassword + ";"
+
+        Return lcConStr
+    Endfunc
+
+    Procedure beginTransaction
+        This.selectDatabase()
+        This.SQLExec("SET TRANSACTION")
+    Endproc
+
+    Procedure endTransaction
+        This.selectDatabase()
+        This.SQLExec("COMMIT")
+    Endproc
+
+    Procedure cancelTransaction
+        This.selectDatabase()
+        This.SQLExec("ROLLBACK")
+    Endproc
+
+    Function getOpenNameSymbol
+		If this.bUseDelimiter
+			Return '"'
+		EndIf
+		Return ""
+    Endfunc
+
+    Function getCloseNameSymbol
+		If this.bUseDelimiter
+			Return '"'
+		EndIf
+		Return ""
+    Endfunc
+
+    Function getTableExistsScript(tcTableName)
+        Local lcQuery, lcLeft, lcRight
+		Store "" to lcLeft, lcRight
+		
+		If this.bUseDelimiter
+			lcLeft = This.getOpenNameSymbol()
+			lcRight = This.getCloseNameSymbol()
+		Else
+			tcTableName = Upper(tcTableName)
+		EndIf
+		
+        TEXT to lcQuery noshow pretext 7 textmerge
+            SELECT RDB$RELATION_NAME AS TableName
+            FROM RDB$RELATIONS
+            WHERE RDB$RELATION_NAME = '<<lcLeft>><<tcTableName>><<lcRight>>'
+        ENDTEXT
+
+        Return lcQuery
+    Endfunc
+
+    Procedure selectDatabase
+        * No aplica
+    Endproc
+
+    Function getGUIDDescription
+        Return "CHAR(16) CHARACTER SET OCTETS"
+    Endfunc
+
+    Function getFieldExistsScript(tcTable, tcField)
+        Local lcQuery, lcLeft, lcRight
+		Store "" to lcLeft, lcRight
+		
+		If this.bUseDelimiter
+			lcLeft = This.getOpenNameSymbol()
+			lcRight = This.getCloseNameSymbol()
+		Else
+			tcTable = Upper(tcTable)
+			tcField = Upper(tcField)
+		EndIf
+		
+        TEXT to lcQuery noshow pretext 7 textmerge
+            SELECT RDB$FIELD_NAME AS FieldName
+            FROM RDB$RELATION_FIELDS
+            WHERE RDB$RELATION_NAME = '<<lcLeft>><<tcTable>><<lcRight>>' AND RDB$FIELD_NAME = '<<lcLeft>><<tcField>><<lcRight>>';
+        ENDTEXT
+
+        Return lcQuery
+    Endfunc
+
+    Function getServerDateScript
+        Return "SELECT CURRENT_TIMESTAMP AS SERTIME FROM RDB$DATABASE"
+    Endfunc
+
+    Function getNewGuidScript
+        Return "SELECT CAST(GEN_UUID() AS CHAR(16) CHARACTER SET OCTETS) AS GUID FROM RDB$DATABASE"
+    Endfunc
+
+    Function getTablesScript
+        Local lcQuery
+
+        TEXT TO lcQuery NOSHOW PRETEXT 7 TEXTMERGE
+            SELECT RDB$RELATION_NAME AS TableName
+            FROM RDB$RELATIONS
+            WHERE RDB$VIEW_BLR IS NULL
+        ENDTEXT
+
+        Return lcQuery
+    Endfunc
+
+    Function getTableFieldsScript(tcTable)
+        Local lcQuery, lcLeft, lcRight
+		Store "" to lcLeft, lcRight
+		
+		If this.bUseDelimiter
+			lcLeft = This.getOpenNameSymbol()
+			lcRight = This.getCloseNameSymbol()
+		Else
+			tcTable = Upper(tcTable)
+		EndIf
+		
+        TEXT to lcQuery noshow pretext 7 textmerge
+            SELECT RDB$FIELD_NAME AS FieldName
+            FROM RDB$RELATION_FIELDS
+            WHERE RDB$RELATION_NAME = '<<lcLeft>><<tcTable>><<lcRight>>'
+        ENDTEXT
+
+        Return lcQuery
+    Endfunc
+
+    Procedure getPrimaryKeyScript(tcTable)
+		Local lcScript, lcOPen, lcClose
+		Store "" to lcLeft, lcRight
+		
+		If this.bUseDelimiter
+			lcLeft = This.getOpenNameSymbol()
+			lcRight = This.getCloseNameSymbol()
+		Else
+			tcTable = Upper(tcTable)
+		EndIf
+
+        TEXT to lcScript noshow pretext 7 textmerge
+            SELECT SEG.RDB$FIELD_NAME AS FieldName
+            FROM RDB$RELATION_CONSTRAINTS CON
+            JOIN RDB$INDEX_SEGMENTS SEG ON CON.RDB$INDEX_NAME = SEG.RDB$INDEX_NAME
+            WHERE CON.RDB$RELATION_NAME = '<<lcLeft>><<tcTable>><<lcRight>>' AND CON.RDB$CONSTRAINT_TYPE = 'PRIMARY KEY'
+        ENDTEXT
+
+        Return lcScript
+    Endproc
+
+    Function createTableOptions
+        Return " "
+    Endfunc
+
+    Procedure sendConfigurationQuerys
+        * Abstract
+    Endproc
+
+    Function setEnvironment
+        Local loEnv
+        loEnv = CreateObject("Collection")        
+        loEnv.Add(Set("Date"), 'date')
+        loEnv.Add(Set("Century"), 'century')
+
+        Set Date To Dmy
+        Set Century On
+
+        Return loEnv
+    Endfunc
+
+    Procedure restoreEnvironment(toEnv)
+        Local lcDate, lcCentury
+        lcDate = toEnv.Item(1)
+        lcCentury = toEnv.Item(2)
+
+        Set Date (lcDate)
+        Set Century &lcCentury
+    Endproc
+
+    Function formatDateOrDateTime(tdValue)
+        If Empty(tdValue)
+            If Type('tdValue') == 'D'
+                Return Date(1753, 01, 01)
+            Endif
+            Return Datetime(1753,01,01,00,00,00)
+        Endif
+
+        Return tdValue
+    Endfunc
+
+    Function getOpenTableScript(tcTable)
+    	Local lcLeft, lcRight
+		Store "" to lcLeft, lcRight
+		
+		If this.bUseDelimiter
+			lcLeft = This.getOpenNameSymbol()
+			lcRight = This.getCloseNameSymbol()
+		Else
+			tcTable = Upper(tcTable)
+		EndIf    
+        Return "SELECT * FROM " + lcLeft + tcTable + lcRight
+    Endfunc
+
+    Function getCloseTableScript()
+        Return ""
+    Endfunc
+
+    Function getCloseCursorScript()
+        Return ""
+    Endfunc
+
+    Function addAutoIncrement()
+        Return "GENERATED BY DEFAULT AS IDENTITY"
+    Endfunc
+
+    Function addPrimaryKey()
+        Return "CONSTRAINT PK PRIMARY KEY"
+    Endfunc
+
+	function dropTable(tcTable)
+		Local lcScript, lcOPen, lcClose
+		Store "" to lcLeft, lcRight
+		
+		If this.bUseDelimiter
+			lcLeft = This.getOpenNameSymbol()
+			lcRight = This.getCloseNameSymbol()
+		Else
+			tcTable = Upper(tcTable)
+		EndIf
+		
+		Text to lcScript noshow pretext 7 textmerge
+			DROP TABLE <<lcLeft>><<tcTable>><<lcRight>>;
+		endtext
+		Return lcScript
+	EndFunc
+
+	Function getCreateDatabaseScript(tcDatabase)
+		* Firebird
+	EndFunc
+	
+	Function getDataBaseExistsScript(tcDatabase)
+		Local lcScript, lcOPen, lcClose
+		Store "" to lcLeft, lcRight
+		
+		If this.bUseDelimiter
+			lcLeft = This.getOpenNameSymbol()
+			lcRight = This.getCloseNameSymbol()
+		Else
+			tcDatabase = Upper(tcDatabase)
+		EndIf
+		Text to lcScript noshow pretext 7 textmerge
+			SELECT 1 FROM rdb$database WHERE LOWER(rdb$database_name) = LOWER('<<lcLeft>><<tcDatabase>><<lcRight>>')
+		EndText
+		Return lcScript
+	EndFunc
+
+	Function addFieldComment(tcComment)
+		Return " "
+	EndFunc
+	
+	Function addTableComment(tcComment)
+		Return " "
+	EndFunc	
+	
+    Function addForeignKey(toFkData)
+        Local lcScript, lcOnUpdate, lcOnDelete, lcOPen, lcClose
+        lcOnUpdate = This.getForeignKeyValue(toFkData.cOnUpdate)
+        lcOnDelete = This.getForeignKeyValue(toFkData.cOnDelete)
+		Store "" to lcOPen, lcClose
+		
+		If this.bUseDelimiter
+			lcOPen  = This.getOpenNameSymbol()
+			lcClose = This.getCloseNameSymbol()
+		Else
+			toFkData.cCurrentField = Upper(toFkData.cCurrentField)
+			toFkData.cField = Upper(toFkData.cField)
+			toFkData.cTable = Upper(toFkData.cTable)
+		EndIf
+		        
+        TEXT to lcScript noshow pretext 7 textmerge
+            CONSTRAINT <<toFkData.cCurrentField>>_FK
+            FOREIGN KEY (<<lcOPen>><<toFkData.cCurrentField>><<lcClose>>)
+            REFERENCES <<lcOPen>><<toFkData.cTable>><<lcClose>>(<<lcOPen>><<toFkData.cField>><<lcClose>>)
+            ON UPDATE <<lcOnUpdate>>
+            ON DELETE <<lcOnDelete>>
+        endtext
+
+        Return lcScript
+    Endfunc
+
+    Function getForeignKeyValue(tcValue)
+        If Upper(tcValue) == "NO ACTION"
+            Return "NO ACTION"
+        Else
+            Return "CASCADE"
+        Endif
+    Endfunc
+
+    Function visitCType(toFields)
+        Return "CHAR(" + toFields.Size + ")"
+    Endfunc
+
+    Function visitYType(toFields)
+        Return "DECIMAL(18,4)"
+    Endfunc
+
+    Function visitDType(toFields)
+        Return "DATE"
+    Endfunc
+
+    Function visitTType(toFields)
+        Return "TIMESTAMP"
+    Endfunc
+
+    Function visitBType(toFields)
+	    toFields.Default = "0.0"
+	    Return "DECIMAL(" + toFields.Size + "," + toFields.Decimal + ")"
+    Endfunc
+
+    Function visitFType(toFields)
+	    toFields.Default = "0.0"
+	    Return "DECIMAL(" + toFields.Size + "," + toFields.Decimal + ")"
+    Endfunc
+
+    Function visitGType(toFields)
+        Return "BLOB SUB_TYPE 0"
+    Endfunc
+
+    Function visitIType(toFields)
+        Return "INTEGER"
+    Endfunc
+
+    Function visitLType(toFields)
+        Return "BOOLEAN"
+    Endfunc
+
+    Function visitMType(toFields)
+        Return "BLOB SUB_TYPE 1"
+    Endfunc
+
+    Function visitNType(toFields)
+        If Val(toFields.Decimal) > 0
+            Return "NUMERIC(" + toFields.Size + "," + toFields.Decimal + ")"
+        Else
+            Return "INTEGER"
+        Endif
+    Endfunc
+
+    Function visitQType(toFields)
+        Return "BLOB SUB_TYPE 0"
+    Endfunc
+
+    Function visitVType(toFields)
+        Return "VARCHAR(" + Iif(Empty(Val(toFields.Size)), '8191', toFields.Size) + ")"
+    Endfunc
+
+    Function visitWType(toFields)
+        Return "BLOB SUB_TYPE 0"
+    Endfunc
 Enddefine
