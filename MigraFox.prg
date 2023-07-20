@@ -93,8 +93,8 @@ Procedure defineConstants
 	#ifndef ttDefName
 		#Define ttDefName 124
 	#endif
-	#ifndef ttIndexed
-		#Define ttIndexed 125
+	#ifndef ttComposed
+		#Define ttComposed 125
 	#endif
 	* ======================================= *
 	* Table data types
@@ -230,13 +230,13 @@ Define Class Scanner As Custom
 			.Add('restrict', ttRestrict)
 			.Add('null', ttNull)
 			.Add('index', ttIndex)
-			.Add('indexed', ttIndexed)
 			.Add('columns', ttColumns)
 			.Add('sort', ttSort)
 			.Add('unique', ttUnique)
 			.Add('asc', ttAsc)
 			.Add('desc', ttDesc)
 			.Add('autoincrement', ttAutoIncrement)
+			.add('composed', ttComposed)
 
 			* Data Types
 			.Add('true', ttTrue)
@@ -406,6 +406,8 @@ Define Class Scanner As Custom
 				This.addToken(ttDefTable, tkGeneric, 'table')
 			Case cIdent == 'name'
 				This.addToken(ttDefName, tkGeneric, 'name')
+			Case cIdent == 'columns'
+				this.addToken(ttColumns, tkGeneric, 'columns')
 			Otherwise
 				MessageBox("Uso inválido del símbolo [-] con la palabra '" + cIdent + "'", 16)
 			endcase			
@@ -472,7 +474,7 @@ Define Class Parser as Custom
 	EndProc
 		
 	function parse
-		Local loTables, loTable
+		Local loTables, loTable, loAtt
 		loTables = CreateObject("Collection")
 		
 		Do while !this.isAtEnd() and this.match(ttDefTable)		
@@ -481,7 +483,11 @@ Define Class Parser as Custom
 			lnCol = this.oPeek.nCol
 			loTable = CreateObject("Collection")
 			Do while this.oPeek.nCol == lnCol
-				loTable.Add(this.parseAttribute())
+				loAtt = this.parseAttribute()
+				If IsNull(loAtt)
+					loop
+				EndIf
+				loTable.Add(loAtt)
 			EndDo
 			loTables.Add(loTable)
 		EndDo
@@ -492,12 +498,17 @@ Define Class Parser as Custom
 	Hidden function parseAttribute
 		Local loToken, lvValue
 		loToken = this.validateAttribute()
+		If IsNull(loToken)
+			Return .null.
+		EndIf
 		this.consume(ttColon, "Se esperaba el símbolo ':' luego del atributo '" + loToken.cLexeme + "'")
 		Do case
 		case loToken.nType == ttFields
 			lvValue = this.parseFields()
 		case loToken.nType == ttForeignKey
 			lvValue = this.parseForeignKey()
+		Case loToken.nType == ttComposed			
+			lvValue = this.parseComposed()
 		Otherwise
 			lvValue = this.primary()
 			this.consume(ttNewLine, "Se esperaba un salto de línea")			
@@ -507,13 +518,13 @@ Define Class Parser as Custom
 	EndFunc
 	
 	Hidden function parseFields
-		Local loFieldList, loAttributes, loNode, lvValue, lnCol, loName
+		Local loFieldList, loAttributes, loNode, lvValue, lnCol, loName, loAtt
 		this.consume(ttNewLine, "Se esperaba un salto de línea")
 		loFieldList = CreateObject("Collection")
 		
 		Do while !this.isAtEnd() and this.match(ttDefName)
 			loName = this.oPrevious
-			this.consume(ttColon, "Se esperaba el símbolo ':' luego del atributo 'table'")
+			this.consume(ttColon, "Se esperaba el símbolo ':' luego del atributo 'name'")
 			lvValue = this.primary()
 			
 			this.consume(ttNewLine, "Se esperaba un salto de línea")
@@ -523,7 +534,11 @@ Define Class Parser as Custom
 			
 			lnCol = this.oPeek.nCol
 			Do while this.oPeek.nCol == lnCol
-				loAttributes.Add(this.parseAttribute())
+				loAtt = this.parseAttribute()
+				If IsNull(loAtt)
+					Loop
+				EndIf
+				loAttributes.Add(loAtt)
 			enddo
 			loFieldList.Add(loAttributes)
 		EndDo		
@@ -531,27 +546,64 @@ Define Class Parser as Custom
 		Return loFieldList
 	EndFunc	
 
+	Hidden function parseComposed
+		Local loList, loAttributes, loNode, lvValue, lnCol, loName, loAtt
+		this.consume(ttNewLine, "Se esperaba un salto de línea")
+		loList = CreateObject("Collection")
+		
+		Do while !this.isAtEnd() and this.match(ttColumns)
+			loName = this.oPrevious
+			this.consume(ttColon, "Se esperaba el símbolo ':' luego del atributo 'columns'")
+			lvValue = this.primary()
+			
+			this.consume(ttNewLine, "Se esperaba un salto de línea")
+			loAttributes = CreateObject("Collection")
+			loNode = CreateObject("Node", loName, lvValue)
+			loAttributes.Add(loNode)
+			
+			lnCol = this.oPeek.nCol
+			Do while this.oPeek.nCol == lnCol
+				loAtt = this.parseAttribute()
+				If IsNull(loAtt)
+					Loop
+				EndIf
+				loAttributes.Add(loAtt)
+			enddo
+			loList.Add(loAttributes)
+		EndDo		
+		
+		Return loList
+	EndFunc	
+
 	Hidden function parseForeignKey
-		Local loForeignKeys
+		Local loForeignKeys, loAtt
 		this.consume(ttNewLine, "Se esperaba un salto de línea")
 		loForeignKeys = CreateObject("Collection")
 		
 		lnCol = this.oPeek.nCol
-		Do while this.oPeek.nCol == lnCol						
-			loForeignKeys.Add(this.parseAttribute())
+		Do while this.oPeek.nCol == lnCol
+			loAtt = this.parseAttribute()
+			If IsNull(loAtt)
+				Loop
+			EndIf
+			loForeignKeys.Add(loAtt)
 		EndDo		
 		
 		Return loForeignKeys
 	EndFunc	
 
 	Hidden function parseIndex
-		Local loIndexes
+		Local loIndexes, loAtt
 		this.consume(ttNewLine, "Se esperaba un salto de línea")
 		loIndexes = CreateObject("Collection")
 		
 		lnCol = this.oPeek.nCol
 		Do while this.oPeek.nCol == lnCol
-			loIndexes.Add(this.parseAttribute())
+			loAtt = this.parseAttribute()
+			If IsNull(loAtt)
+				Loop
+			EndIf
+			loIndexes.Add(loAtt)
 		EndDo		
 		
 		Return loIndexes
@@ -574,14 +626,14 @@ Define Class Parser as Custom
 		Case this.match(ttOnDelete)
 		Case this.match(ttOnUpdate)
 		Case this.match(ttIndex)
-		Case this.match(ttIndexed)
 		Case this.match(ttColumns)
 		Case this.match(ttSort)
 		Case this.match(ttUnique)
 		Case this.match(ttAutoIncrement)
 		Case this.match(ttDecimal)
+		Case this.match(ttComposed)
 		Otherwise
-			MessageBox("Se esparaba un atributo pero se obtuvo: " + tokenName(this.oPeek.nType), 16)
+			this.parseError("Se esparaba un atributo pero se obtuvo: " + Transform(this.oPeek.vLiteral))
 			Return .null.
 		EndCase
 		Return this.oPrevious
@@ -610,23 +662,45 @@ Define Class Parser as Custom
 		Case this.match(ttNumber)
 		Case this.match(ttTrue)
 		Case this.match(ttFalse)
+		Case this.match(ttUnique)
 		Case this.match(ttLeftBracket)
 			Local loValue
 			loValue = CreateObject("Collection")
 			If !this.match(ttRightBracket)
-				lvValue.Add(this.parseName())
+				If this.oPeek.nKind != tkIdent
+					this.parseError("Valor inválido: " + tokenName(this.oPeek.nType))
+					Return .null.
+				EndIf
+				loValue.Add(CreateObject("Node", this.parseArrayValues()))
 				Do while this.match(ttComma)
-					lvValue.Add(this.parseName())
+					If this.oPeek.nKind != tkIdent
+						this.parseError("Valor inválido: " + tokenName(this.oPeek.nType))
+						Return .null.
+					EndIf
+					loValue.Add(CreateObject("Node", this.parseArrayValues()))
 				EndDo
-				this.consume(ttRightBracket, "Se esperaba ']' tras el nombre de la columna", 16)
+				this.consume(ttRightBracket, "Se esperaba ']' tras el nombre de la columna")
 			EndIf
 			Return loValue
 		Otherwise
-			MessageBox("Se esparaba un valor escalar o compuesto pero se obtuvo: " + tokenName(this.oPeek.nType), 16)
+			this.parseError("Se esparaba un valor escalar o compuesto pero se obtuvo: " + Transform(this.oPeek.vLiteral))
 			Return .null.
 		EndCase
 		Return this.oPrevious
 	EndFunc
+	
+	Hidden function parseArrayValues
+		Local loValues
+		loValues = CreateObject("Collection")
+		loValues.Add(this.advance())
+		Do while this.oPeek.nKind == tkIdent
+			loValues.Add(this.advance())
+		EndDo
+		If loValues.count == 1
+			Return loValues(1)
+		EndIf
+		Return loValues
+	endfunc
 	
 	Hidden function match(t1, t2, t3)
 		Local i		
@@ -642,9 +716,9 @@ Define Class Parser as Custom
 	Hidden function consume(tnType, tcMessage)
 		If this.check(tnType)
 			Return this.advance()
-		EndIf
-
-		Error tcMessage
+		EndIf		
+		this.parseError(tcMessage)
+		Return .null.
 	EndFunc
 	
 	Hidden function check(tnType)
@@ -681,6 +755,24 @@ Define Class Parser as Custom
 	Hidden function oPrevious_Access
 		Return this.oTokens[this.nCurrent-1]
 	EndFunc
+	
+	Hidden procedure parseError(tcMessage)
+		Local loToken, lcMsg
+		loToken = this.oPeek
+		lcMsg = 'Error en [' + Alltrim(Str(loToken.nLine)) + ':' + Alltrim(Str(loToken.nCol)) + ']: ' + tcMessage
+		MessageBox(lcMsg, 16)
+		
+		* Estabilizar el Parser
+		Do while !this.isAtEnd() and !this.check(ttNewLine)
+			this.advance()
+		EndDo
+		If this.isAtEnd()
+			Return
+		EndIf
+		If !this.check(ttNewLine)
+			MessageBox("ERROR: hubo un error en el analizador sintáctico del cual no se pudo recuperar.", 16)
+		EndIf
+	endproc
 EndDefine
 * =================================================================================== *
 * Token Class
@@ -800,6 +892,7 @@ Function evalTables(toTables)
 		AddProperty(loTableData, "cTableName", "")
 		AddProperty(loTableData, "cTableDescription", "")
 		AddProperty(loTableData, "aTableFields[1]", .null.)
+		AddProperty(loTableData, "oComposedIndexes", CreateObject("Collection"))
 
 		For each loAttribute in loTable
 			Do case
@@ -807,6 +900,50 @@ Function evalTables(toTables)
 				loTableData.cTableName = loAttribute.vValue.vLiteral
 			Case loAttribute.oToken.nType == ttDescription
 				loTableData.cTableDescription = loAttribute.vValue.vLiteral
+			Case loAttribute.oToken.nType == ttComposed
+				Local loColumnInfo, loMetaData								
+				
+				For each loNode in loAttribute.vValue && Recorre el número de composiciones
+					loComposed = CreateObject("Empty")
+					AddProperty(loComposed, "oColumns", CreateObject("Collection"))
+					AddProperty(loComposed, "bUnique", .f.)
+					AddProperty(loComposed, "cName", "idx_" + loTableData.cTableName + Lower(Sys(2015)))
+					AddProperty(loComposed, "cSort", "ASC")
+					AddProperty(loComposed, "cTable", loTableData.cTableName)
+
+					For each loColumn in loNode && Recorre los atributos de cada composición (columns, unique, name)
+						Do case
+						Case loColumn.oToken.nType == ttColumns
+							loColumnInfo = CreateObject("Collection")
+							For each loItem in loColumn.vValue && Recorre el número de columnas que conforman el índice
+								Local loColumnMeta
+								loColumnMeta = CreateObject("Empty")
+								AddProperty(loColumnMeta, "cName", "")
+								AddProperty(loColumnMeta, "cSort", "ASC")
+								Do case
+								case loItem.vValue.class == "Collection"
+									Local loPair
+									loPair = loItem.vValue
+									loColumnMeta.cName = loPair.Item(1).vLiteral
+									loColumnMeta.cSort = loPair.Item(2).vLiteral
+								case loItem.vValue.class == "Token"
+									loColumnMeta.cName = loItem.vValue.vLiteral
+								EndCase
+								loColumnInfo.Add(loColumnMeta)								
+							EndFor
+							loComposed.oColumns.add(loColumnInfo)							
+						Case InList(loColumn.oToken.nType, ttName, ttDefName)
+							loComposed.cName = loColumn.vValue.vLiteral
+						Case loColumn.oToken.nType == ttUnique
+							loComposed.bUnique = (loColumn.vValue.vLiteral == "true")
+						Case loColumn.oToken.nType == ttSort
+							loComposed.cSort = loColumn.vValue.vLiteral
+						Otherwise
+							MessageBox("Atributo inválido para la definición de un campo: `" + tokenName(loField.oToken.nType) + "`", 16)
+						EndCase
+					EndFor
+					loTableData.oComposedIndexes.add(loComposed)
+				EndFor
 			Case loAttribute.oToken.nType == ttFields
 				Local laFields[loAttribute.vValue.count, 23], i
 				i = 0
@@ -833,7 +970,7 @@ Function evalTables(toTables)
 					laFields[i, 20] = .f.	 && PrimaryKey
 					laFields[i, 21] = .null. && ForeignKey metadata
 					laFields[i, 22] = .f.	 && AutoIncrement
-					laFields[i, 23] = .f.	 && ¿Indexed?
+					laFields[i, 23] = .null. && Index metadata
 
 					For each loField in loNode
 						Do case
@@ -855,10 +992,52 @@ Function evalTables(toTables)
 							laFields[i, 22] = (loField.vValue.vLiteral == "true")
 						Case loField.oToken.nType == ttPrimaryKey
 							laFields[i, 20] = (loField.vValue.vLiteral == "true")
-						Case loField.oToken.nType == ttIndexed
-							laFields[i, 23] = (loField.vValue.vLiteral == "true")							
+						Case loField.oToken.nType == ttIndex
+							Local loIdxMeta
+							loIdxMeta = CreateObject("Empty")
+							AddProperty(loIdxMeta, "cTable", loTableData.cTableName)
+							AddProperty(loIdxMeta, "cField", laFields[i, 1])
+							AddProperty(loIdxMeta, "bUnique", .f.)
+							AddProperty(loIdxMeta, "cSort", "ASC")
+							AddProperty(loIdxMeta, "cName", "idx_" + loIdxMeta.cTable + '_' + loIdxMeta.cField)
+							Do case
+							case loField.vValue.class == "Collection"
+								For each loIdex in loField.vValue
+									If InList(loIdex.oToken.nType, ttAsc, ttDesc)
+										loIdxMeta.cSort = loIdex.vValue.vLiteral
+										Loop
+									EndIf
+									If loIdex.oToken.nType == ttUnique
+										loIdxMeta.bUnique = .t.
+										Loop
+									EndIf
+									MessageBox("Atributo inválido para la definición de un índice: `" + tokenName(loIdex.oToken.nType) + "`", 16)
+								EndFor
+							Case loField.vValue.class == "Token"
+								Local llValidate
+								llValidate = .t.
+								If InList(loField.vValue.nType, ttAsc, ttDesc)
+									loIdxMeta.cSort = loField.vValue.vLiteral
+									llValidate = .f.
+								EndIf
+								If InList(loField.vValue.nType, ttTrue, ttFalse)
+									If loField.vValue.vLiteral == "false"
+										loIdxMeta = .null.
+									EndIf
+									llValidate = .f.
+								EndIf				
+								If loField.vValue.nType == ttUnique
+									loIdxMeta.bUnique = .t.
+									llValidate = .f.
+								EndIf
+								If llValidate
+									MessageBox("Valor inválido para la definición de un índice: `" + tokenName(loField.vValue.nType) + "`", 16)
+								EndIf
+							Otherwise
+								MessageBox("Valor inválido para la definición de un índice: `" + tokenName(loField.oToken.nType) + "`", 16)
+							endcase
+							laFields[i, 23] = loIdxMeta						
 						Case loField.oToken.nType == ttForeignKey
-							Local lbFound
 							* Field metadata
 							loFieldFk = CreateObject("Empty")
 							AddProperty(loFieldFk, "cTable", "")
@@ -869,30 +1048,27 @@ Function evalTables(toTables)
 							AddProperty(loFieldFk, "cOnUpdate", "DEFAULT")
 							
 							For each loField2 in loField.vValue
-								lbFound = .f.								
 								If loField2.oToken.nType == ttFkTable
-									lbFound = .t.
 									loFieldFk.cTable = loField2.vValue.vLiteral
+									Loop
 								EndIf
 								
 								If loField2.oToken.nType == ttFkField
-									lbFound = .t.
 									loFieldFk.cField = loField2.vValue.vLiteral
+									Loop
 								EndIf
 								
 								If loField2.oToken.nType == ttOnDelete
-									lbFound = .t.
 									loFieldFk.cOnDelete = loField2.vValue.vLiteral
+									Loop
 								EndIf
 								
 								If loField2.oToken.nType == ttOnUpdate
-									lbFound = .t.
 									loFieldFk.cOnUpdate = loField2.vValue.vLiteral
+									Loop
 								EndIf
 
-								If !lbFound
-									MessageBox("Atributo inválido para la definición de una clave foránea: `" + tokenName(loField2.oToken.nType) + "`", 16)
-								EndIf
+								MessageBox("Atributo inválido para la definición de una clave foránea: `" + tokenName(loField2.oToken.nType) + "`", 16)
 							EndFor
 							laFields[i, 21] = loFieldFk
 						Otherwise
@@ -965,7 +1141,7 @@ Function tokenName(tnType)
 	Case tnType == 124
 		Return "ttDefName"
 	Case tnType == 125
-		Return "ttIndexed"
+		Return "ttComposed"
 	Case tnType == 200
 		Return "ttChar"
 	Case tnType == 201
@@ -1031,7 +1207,11 @@ Define Class Node as Custom
 	
 	Procedure init(toToken, tvValue)
 		this.oToken = toToken
-		this.vValue = tvValue
+		If Pcount() = 1
+			this.vValue = toToken
+		Else
+			this.vValue = tvValue
+		EndIf
 	endproc
 EndDefine
 
@@ -1582,7 +1762,8 @@ Define Class DBEngine As Custom
 	Procedure migrate(tcTableOrPath)
 		Local lbCloseTable, laTables[1], i, j, k, lcTableName, lcTablePath, lcPathAct, ;
 			lcFieldsScript, lcValuesScript, lcLeft, lcRight, lcDateAct, laDateFields[1], ;
-			lcMarkAct, lcCenturyAct, loEnv, lcScript, lbMigrateDBC, loTables, lcTableDescription
+			lcMarkAct, lcCenturyAct, loEnv, lcScript, lbMigrateDBC, loTables, lcTableDescription, ;
+			loComposedIndexes
 
 		lcPathAct = Set("Default")
 		lcTableDescription = ""
@@ -1639,6 +1820,7 @@ Define Class DBEngine As Custom
 					Local laFields[1]
 					lcTableName 		= loTables(i).cTableName
 					lcTableDescription 	= loTables(i).cTableDescription
+					loComposedIndexes 	= loTables(i).oComposedIndexes
 					Acopy(loTables(i).aTableFields, laFields)
 				EndIf				
 
@@ -1649,7 +1831,7 @@ Define Class DBEngine As Custom
 						Return
 					EndIf
 				Endif
-				This.createTable(lcTableName, lcTableDescription, @laFields)
+				This.createTable(lcTableName, lcTableDescription, loComposedIndexes, @laFields)
 				
 				If Type('loTables') != 'O' && <<TMG SCRIPTS does not insert values>>
 					* Iterate fields
@@ -1704,10 +1886,10 @@ Define Class DBEngine As Custom
 		Return .t.
 	Endfunc
 
-	Procedure createTable(tcTableName, tcTableDescription, taFields)
+	Procedure createTable(tcTableName, tcTableDescription, toComposedIndexes, taFields)
 		Local i, lcScript, lcType, lcName, lcSize, lcDecimal, lbAllowNull, lcLongName, ;
 			lcComment, lnNextValue, lnStepValue, lcDefault, lcLeft, lcRight, loFields, lcFkScript, ;
-			lcFieldsScript, lcInternalID, lbInsertInternalID, lcIdxScript
+			lcFieldsScript, lcInternalID, lbInsertInternalID, loIdxScript
 		
 		lcLeft  = This.cLeft
 		lcRight = This.cRight
@@ -1716,8 +1898,8 @@ Define Class DBEngine As Custom
 		lcFieldsScript 		= ''
 		lcInternalID  		= lcLeft + this.cPKName + lcRight + Space(1) + This.getGUIDDescription()
 		lbInsertInternalID 	= .T.
-		lcIdxScript		= ''
-
+		loIdxScript			= CreateObject("Collection")
+		
 		lcDefault = Space(1)
 		loFields  = Createobject("Empty")
 		=AddProperty(loFields, "name", "")
@@ -1734,7 +1916,8 @@ Define Class DBEngine As Custom
 		=AddProperty(loFields, "primaryKey", .F.)
 		=AddProperty(loFields, "addDefault", .T.)
 		=AddProperty(loFields, "foreignKey", .null.)
-		=AddProperty(loFields, "indexed", .f.)
+		=AddProperty(loFields, "index", .null.)
+		=AddProperty(loFields, "tag", "")
 
 		For i = 1 To Alen(taFields, 1)
 			loFields.Name 		= taFields[i, 1]
@@ -1766,7 +1949,7 @@ Define Class DBEngine As Custom
 				loFields.primaryKey 	= taFields[i, 20]
 				loFields.foreignKey 	= taFields[i, 21]
 				loFields.autoIncrement 	= taFields[i, 22]
-				loFields.indexed		= taFields[i, 23]
+				loFields.index			= taFields[i, 23]
 			EndIf
 			If i > 1
 				lcFieldsScript = lcFieldsScript + ', '
@@ -1804,14 +1987,8 @@ Define Class DBEngine As Custom
 				lcFkScript = lcFkScript + ' ' + this.addForeignKey(loFields.foreignKey)
 			EndIf
 			
-			If loFields.indexed
-				If !this.bExecuteIndexScriptSeparately and !Empty(lcIdxScript)
-					lcIdxScript = lcIdxScript + ','
-				EndIf
-				lcIdxScript = lcIdxScript + this.addSingleIndex("idx_" + tcTableName + '_' + loFields.Name, tcTableName, loFields.Name, "ASC")
-				If this.bExecuteIndexScriptSeparately
-					lcIdxScript = lcIdxScript
-				EndIf
+			If Type('loFields.index') == 'O'
+				loIdxScript.Add(this.addSingleIndex(loFields.index))
 			EndIf
 		EndFor
 
@@ -1825,8 +2002,26 @@ Define Class DBEngine As Custom
 			lcScript = lcScript + ',' + lcFkScript
 		EndIf
 		
-		If !this.bExecuteIndexScriptSeparately and !Empty(lcIdxScript)
-			lcScript = lcScript + ',' + lcIdxScript
+		Local loComposedScripts
+		loComposedScripts = CreateObject("Collection")
+		If !IsNull(toComposedIndexes)
+			loComposedScripts = this.addComposedIndex(toComposedIndexes)
+		EndIf
+		
+		If !this.bExecuteIndexScriptSeparately
+			* Agregamos los índices individuales
+			If loIdxScript.count > 0				
+				For each cIndex in loIdxScript
+					lcScript = lcScript + ',' + cIndex
+				EndFor
+			EndIf
+
+			If loComposedScripts.count > 0
+				* Si tenemos índices compuestos también los agregamos
+				For each lcComposedIndex in loComposedScripts
+					lcScript = lcScript + ',' + lcComposedIndex
+				EndFor
+			EndIf
 		EndIf
 
 		lcScript = lcScript + ')' + This.createTableOptions()
@@ -1836,20 +2031,41 @@ Define Class DBEngine As Custom
 		EndIf
 		
 		lcScript = lcScript + ';'
+		* POLICIA
+		_cliptext = lcScript
+		MessageBox(lcScript)
+		* POLICIA
 		
-		If this.bExecuteIndexScriptSeparately and !Empty(lcIdxScript)
-			* POLICIA
-			_cliptext = lcScript + CRLF + lcIdxScript
-			MessageBox(lcScript + CRLF + lcIdxScript)
-			* POLICIA
+		If this.bExecuteIndexScriptSeparately
 			If This.SQLExec(lcScript)
-				Return This.SQLExec(lcIdxScript)
+				Local cIndex
+				cIndex = ''
+				If loIdxScript.count > 0
+					* Ejecutamos los índices individuales
+					For each cIndex in loIdxScript
+						* POLICIA
+						_cliptext = cIndex
+						MessageBox(cIndex)
+						* POLICIA
+						This.SQLExec(cIndex)
+					EndFor
+				EndIf
+				
+				If loComposedScripts.count > 0
+					cIndex = ''
+					* Ejecutamos los índices compuestos
+					For each cIndex in loComposedScripts
+						* POLICIA
+						_cliptext = cIndex
+						MessageBox(cIndex)
+						* POLICIA
+						This.SQLExec(cIndex)
+					EndFor
+				EndIf
+				Return .t.
 			EndIf
+			Return .f.
 		Else
-			* POLICIA
-			_cliptext = lcScript
-			MessageBox(lcScript)
-			* POLICIA
 			Return This.SQLExec(lcScript)
 		EndIf
 	Endproc
@@ -2260,10 +2476,14 @@ Define Class DBEngine As Custom
 		* Abstract
 	EndFunc
 	
-	Function addSingleIndex(tcName, tcTable, tcField, tcSort)
+	Function addSingleIndex(toIndex)
 		* Abstract
 	EndFunc
 	
+	Function addComposedIndex(toIndex)
+		* Abstract
+	EndFunc
+
 	Function getForeignKeyValue(tcValue)
 		* Abstract
 	EndFunc
@@ -2555,7 +2775,7 @@ Define Class MSSQL As DBEngine
 		Return lcScript
 	EndFunc
 
-	Function addSingleIndex(tcName, tcTable, tcField, tcSort)
+	Function addSingleIndex(toIndex)
 		Local lcScript, lcLeft, lcRight
 		Store "" to lcLeft, lcRight
 		
@@ -2563,10 +2783,37 @@ Define Class MSSQL As DBEngine
 		lcRight = this.cRight
 
 		Text to lcScript noshow pretext 7 textmerge
-			INDEX <<tcName>> (<<lcLeft>><<tcField>><<lcRight>> <<tcSort>>)
+			INDEX <<toIndex.cName>> <<Iif(toIndex.bUnique, "UNIQUE", "")>> (<<lcLeft>><<toIndex.cField>><<lcRight>> <<toIndex.cSort>>)
 		EndText
 
 		Return lcScript
+	EndFunc
+
+	Function addComposedIndex(toIndex)
+		Local lcScript, lcLeft, lcRight, lcColumns, loResult
+		Store "" to lcLeft, lcRight, lcColumns
+
+		lcLeft = this.cLeft
+		lcRight = this.cRight
+		loResult = CreateObject("Collection")
+
+		For each loComposed in toIndex			
+			For each loColumn in loComposed.oColumns
+				lcColumns = ''
+				For each loField in loColumn
+					If !Empty(lcColumns)
+						lcColumns = lcColumns + ','
+					EndIf
+					lcColumns = lcColumns + ' ' + lcLeft + loField.cName + lcRight + ' ' + loField.cSort
+				EndFor
+
+				Text to lcScript noshow pretext 7 textmerge
+					INDEX <<loComposed.cName>> <<Iif(loComposed.bUnique, "UNIQUE", "")>> (<<lcColumns>>)
+				EndText
+				loResult.Add(lcScript)
+			EndFor
+		EndFor
+		Return loResult
 	EndFunc
 
 	Function getForeignKeyValue(tcValue)
@@ -2914,16 +3161,43 @@ Define Class MySQL As DBEngine
 		Return "DROP TABLE IF EXISTS " + lcOPen + tcTable + lcClose + ';'
 	endfunc
 
-	Function addSingleIndex(tcName, tcTable, tcField, tcSort)
+	Function addSingleIndex(toIndex)
 		Local lcScript, lcLeft, lcRight
 		Store "" to lcLeft, lcRight
 		lcLeft = this.cLeft
 		lcRight = this.cRight
 		Text to lcScript noshow pretext 7 textmerge
-			INDEX <<tcName>> (<<lcLeft>><<tcField>><<lcRight>> <<tcSort>>)
+			<<Iif(toIndex.bUnique, "UNIQUE", "")>> INDEX <<toIndex.cName>> (<<lcLeft>><<toIndex.cField>><<lcRight>> <<toIndex.cSort>>)
 		EndText
 
 		Return lcScript
+	EndFunc
+
+	Function addComposedIndex(toIndex)
+		Local lcScript, lcLeft, lcRight, lcColumns, loResult
+		Store "" to lcLeft, lcRight, lcColumns
+
+		lcLeft = this.cLeft
+		lcRight = this.cRight
+		loResult = CreateObject("Collection")
+
+		For each loComposed in toIndex			
+			For each loColumn in loComposed.oColumns
+				lcColumns = ''
+				For each loField in loColumn
+					If !Empty(lcColumns)
+						lcColumns = lcColumns + ','
+					EndIf
+					lcColumns = lcColumns + ' ' + lcLeft + loField.cName + lcRight + ' ' + loField.cSort
+				EndFor
+
+				Text to lcScript noshow pretext 7 textmerge
+					<<Iif(loComposed.bUnique, "UNIQUE", "")>> INDEX <<loComposed.cName>> (<<lcColumns>>)
+				EndText
+				loResult.Add(lcScript)
+			EndFor
+		EndFor
+		Return loResult
 	EndFunc
 	
 	* C = Character
@@ -3326,7 +3600,7 @@ Define Class Firebird As DBEngine
         Endif
     Endfunc
 
-	Function addSingleIndex(tcName, tcTable, tcField, tcSort)
+	Function addSingleIndex(toIndex)
 		Local lcScript, lcLeft, lcRight
 		Store "" to lcLeft, lcRight
 		
@@ -3335,12 +3609,40 @@ Define Class Firebird As DBEngine
 			lcRight = this.cRight
 		EndIf
 		Text to lcScript noshow pretext 7 textmerge
-			CREATE <<tcSort>> INDEX <<tcName>> ON <<lcLeft>><<tcTable>><<lcRight>>(<<lcLeft>><<tcField>><<lcRight>>);
+			CREATE <<Iif(toIndex.bUnique, "UNIQUE", "")>> <<toIndex.cSort>> INDEX <<toIndex.cName>> ON <<lcLeft>><<toIndex.cTable>><<lcRight>>(<<lcLeft>><<toIndex.cField>><<lcRight>>);
 		EndText
 
 		Return lcScript
 	EndFunc
 
+	Function addComposedIndex(toIndex)
+		Local lcScript, lcLeft, lcRight, lcColumns, loResult
+		Store "" to lcLeft, lcRight, lcColumns
+
+		lcLeft = this.cLeft
+		lcRight = this.cRight
+		loResult = CreateObject("Collection")
+
+		For each loComposed in toIndex			
+			For each loColumn in loComposed.oColumns
+				lcColumns = ''
+				For each loField in loColumn
+					If !Empty(lcColumns)
+						lcColumns = lcColumns + ','
+					EndIf
+					lcColumns = lcColumns + ' ' + lcLeft + loField.cName + lcRight
+				EndFor
+
+				Text to lcScript noshow pretext 7 textmerge
+					CREATE <<Iif(loComposed.bUnique, "UNIQUE", "")>> <<loComposed.cSort>> INDEX <<loComposed.cName>> ON <<lcLeft>><<loComposed.cTable>><<lcRight>>(<<lcColumns>>)
+				EndText
+				loResult.Add(lcScript)
+			EndFor
+		EndFor
+		Return loResult
+	EndFunc
+	
+	* C = Character
     Function visitCType(toFields)
         Return "CHAR(" + toFields.Size + ")"
     Endfunc
