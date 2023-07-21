@@ -135,7 +135,10 @@ Procedure defineConstants
 	#ifndef ttBlob
 		#Define ttBlob 211
 	#Endif	
-	
+	#ifndef ttGuid
+		#Define ttGuid 212
+	#Endif
+		
 	#ifndef ttIdent
 		#Define ttIdent 21
 	#Endif
@@ -255,6 +258,7 @@ Define Class Scanner As Custom
 			.Add('text', ttText)
 			.Add('varbinary', ttVarBinary)
 			.Add('blob', ttBlob)
+			.Add('guid', ttGuid)
 		EndWith
 	Endproc
 
@@ -290,7 +294,7 @@ Define Class Scanner As Custom
 		Do While At(This.peek(), This.cLetters) > 0
 			This.advance()
 		Enddo
-		lcLexeme = Lower(Substr(This.cSource, This.nStart, This.nCurrent-This.nStart))
+		lcLexeme = Substr(This.cSource, This.nStart, This.nCurrent-This.nStart)
 
 		Return lcLexeme
 	EndProc
@@ -299,7 +303,7 @@ Define Class Scanner As Custom
 		Local lcLexeme, lnCol, lnTokenType
 		lnCol = this.nCol-1
 		lnTokenType = ttIdent
-		lcLexeme = this.getIdentifier()
+		lcLexeme = Lower(this.getIdentifier())
 
 		If This.oKeywords.Exists(lcLexeme)
 			lnTokenType = This.oKeywords.Item(lcLexeme)
@@ -332,7 +336,20 @@ Define Class Scanner As Custom
 		try
 			lnLiteral = Val(lcLexeme)
 		Catch to loEx
-			MessageBox("No se pudo convertir a número el siguiente valor: " + lcLexeme + CRLF + "Mensaje: " + loEx.Message, 16)
+			Local lcMsg
+			Text to lcMsg noshow pretext 7 textmerge
+				Error de conversión:
+				No se pudo convertir el valor siguiente en un número entero:
+
+				Valor: "<<lcLexeme>>"
+
+				Mensaje: "<<loEx.Message>>"
+				
+				Ubicación: [<<this.nLine>>:<<lnCol>>]
+
+				Por favor, asegúrate de ingresar un número válido y sin caracteres no numéricos.
+			endtext
+			MessageBox(lcMsg, 16)
 		EndTry
 
 		Return This.addToken(ttNumber, tkPrimary, lnLiteral, lnCol)
@@ -399,8 +416,8 @@ Define Class Scanner As Custom
 				Return
 			EndIf
 			This.nStart = this.nCurrent
-			this.advance()			
-			cIdent = this.getIdentifier()
+			this.advance()		
+			cIdent = Lower(this.getIdentifier())
 			Do case
 			Case cIdent == 'table'
 				This.addToken(ttDefTable, tkGeneric, 'table')
@@ -409,7 +426,17 @@ Define Class Scanner As Custom
 			Case cIdent == 'columns'
 				this.addToken(ttColumns, tkGeneric, 'columns')
 			Otherwise
-				MessageBox("Uso inválido del símbolo [-] con la palabra '" + cIdent + "'", 16)
+				Local lcMsg
+				Text to lcMsg noshow pretext 7 textmerge
+				    Uso inválido del símbolo [-] con la palabra:
+
+				    Palabra: "<<cIdent>>"
+
+				    Ubicación: [<<this.nLine>>:<<This.nStart>>]
+
+				    Por favor, asegúrate de utilizar el símbolo [-] correctamente con una de las palabras reservadas válidas.
+				endtext
+				MessageBox(lcMsg, 16)
 			endcase			
 		Case Inlist(ch, '"', "'")
 			This.readString(ch)
@@ -550,7 +577,6 @@ Define Class Parser as Custom
 		Local loList, loAttributes, loNode, lvValue, lnCol, loName, loAtt
 		this.consume(ttNewLine, "Se esperaba un salto de línea")
 		loList = CreateObject("Collection")
-		
 		Do while !this.isAtEnd() and this.match(ttColumns)
 			loName = this.oPrevious
 			this.consume(ttColon, "Se esperaba el símbolo ':' luego del atributo 'columns'")
@@ -576,7 +602,7 @@ Define Class Parser as Custom
 	EndFunc	
 
 	Hidden function parseForeignKey
-		Local loForeignKeys, loAtt
+		Local loForeignKeys, loAtt, lnCol
 		this.consume(ttNewLine, "Se esperaba un salto de línea")
 		loForeignKeys = CreateObject("Collection")
 		
@@ -656,7 +682,9 @@ Define Class Parser as Custom
 		Case this.match(ttInt)
 		Case this.match(ttBool)
 		Case this.match(ttText)
+		Case this.match(ttVarbinary)
 		Case this.match(ttBlob)
+		Case this.match(ttGuid)
 		Case this.match(ttIdent)
 		Case this.match(ttString)
 		Case this.match(ttNumber)
@@ -716,8 +744,19 @@ Define Class Parser as Custom
 	Hidden function consume(tnType, tcMessage)
 		If this.check(tnType)
 			Return this.advance()
-		EndIf		
-		this.parseError(tcMessage)
+		EndIf
+		Local lcMsg
+		Text to lcMsg noshow pretext 7 textmerge
+		    ERROR - Símbolo Inesperado:
+
+		    Se encontró el símbolo inesperado '<<tokenName(this.oPeek.nType)>>' en la línea <<this.oPeek.nLine>> y columna <<this.oPeek.nCol>>.
+
+		    <<tcMessage>>
+
+		    Por favor, verifica la sintaxis del código y asegúrate de que esté correctamente estructurado.
+		endtext
+		MessageBox(lcMsg, 16)
+		this.parseError()
 		Return .null.
 	EndFunc
 	
@@ -757,10 +796,12 @@ Define Class Parser as Custom
 	EndFunc
 	
 	Hidden procedure parseError(tcMessage)
-		Local loToken, lcMsg
-		loToken = this.oPeek
-		lcMsg = 'Error en [' + Alltrim(Str(loToken.nLine)) + ':' + Alltrim(Str(loToken.nCol)) + ']: ' + tcMessage
-		MessageBox(lcMsg, 16)
+		If !Empty(tcMessage)
+			Local loToken, lcMsg
+			loToken = this.oPeek
+			lcMsg = 'Error en [' + Alltrim(Str(loToken.nLine)) + ':' + Alltrim(Str(loToken.nCol)) + ']: ' + tcMessage
+			MessageBox(lcMsg, 16)
+		EndIf
 		
 		* Estabilizar el Parser
 		Do while !this.isAtEnd() and !this.check(ttNewLine)
@@ -862,6 +903,7 @@ Procedure testEvaluator(tcFileName)
 	loParser = CreateObject("Parser", loTokens)
 	loTables = loParser.parse()
 	loTMGObject = evalTables(loTables)
+	MessageBox(loTMGObject)
 EndProc
 
 Function executeTMGFile(tcFileName)
@@ -901,7 +943,7 @@ Function evalTables(toTables)
 			Case loAttribute.oToken.nType == ttDescription
 				loTableData.cTableDescription = loAttribute.vValue.vLiteral
 			Case loAttribute.oToken.nType == ttComposed
-				Local loColumnInfo, loMetaData								
+				Local loColumnInfo, loMetaData				
 				
 				For each loNode in loAttribute.vValue && Recorre el número de composiciones
 					loComposed = CreateObject("Empty")
@@ -939,7 +981,17 @@ Function evalTables(toTables)
 						Case loColumn.oToken.nType == ttSort
 							loComposed.cSort = loColumn.vValue.vLiteral
 						Otherwise
-							MessageBox("Atributo inválido para la definición de un campo: `" + tokenName(loField.oToken.nType) + "`", 16)
+							Local lcMsg
+							Text to lcMsg noshow pretext 7 textmerge
+							    Error en la definición de campo:
+							    Atributo inválido para la definición de un campo: `<<tokenName(loField.oToken.nType)>>`
+
+							    Ubicación: [<<loField.oToken.nLine>>:<<loField.oToken.nCol>>]
+
+							    Asegúrate de utilizar los atributos correctos para la definición del campo.
+							endtext
+							MessageBox(lcMsg, 16)
+							*MessageBox("Atributo inválido para la definición de un campo: `" + tokenName(loField.oToken.nType) + "`", 16)
 						EndCase
 					EndFor
 					loTableData.oComposedIndexes.add(loComposed)
@@ -1011,7 +1063,17 @@ Function evalTables(toTables)
 										loIdxMeta.bUnique = .t.
 										Loop
 									EndIf
-									MessageBox("Atributo inválido para la definición de un índice: `" + tokenName(loIdex.oToken.nType) + "`", 16)
+									Local lcMsg
+									Text to lcMsg noshow pretext 7 textmerge
+									    Error en la definición de índice:
+									    Atributo inválido para la definición de un índice: `<<tokenName(loIndex.oToken.nType)>>`
+
+									    Ubicación: [<<loIndex.oToken.nLine>>:<<loIndex.oToken.nCol>>]
+
+									    Asegúrate de utilizar los atributos correctos para la definición del índice.
+									endtext
+									MessageBox(lcMsg, 16)
+									*MessageBox("Atributo inválido para la definición de un índice: `" + tokenName(loIdex.oToken.nType) + "`", 16)
 								EndFor
 							Case loField.vValue.class == "Token"
 								Local llValidate
@@ -1031,10 +1093,29 @@ Function evalTables(toTables)
 									llValidate = .f.
 								EndIf
 								If llValidate
-									MessageBox("Valor inválido para la definición de un índice: `" + tokenName(loField.vValue.nType) + "`", 16)
+									Local lcMsg
+									Text to lcMsg noshow pretext 7 textmerge
+									    Error en la definición de índice:
+									    Valor inválido para la definición de un índice: `<<tokenName(loField.vValue.nType)>>`
+
+									    Ubicación: [<<loField.vValue.nLine>>:<<loField.vValue.nCol>>]
+
+									    Asegúrate de proporcionar un valor válido para la definición del índice.
+									endtext
+									MessageBox(lcMsg, 16)
+									*MessageBox("Valor inválido para la definición de un índice: `" + tokenName(loField.vValue.nType) + "`", 16)
 								EndIf
 							Otherwise
-								MessageBox("Valor inválido para la definición de un índice: `" + tokenName(loField.oToken.nType) + "`", 16)
+								Local lcMsg
+								Text to lcMsg noshow pretext 7 textmerge
+								    Error en la definición de índice:
+								    Valor inválido para la definición de un índice: `<<tokenName(loField.vValue.nType)>>`
+
+								    Ubicación: [<<loField.vValue.nLine>>:<<loField.vValue.nCol>>]
+
+								    Asegúrate de proporcionar un valor válido para la definición del índice.
+								endtext
+								MessageBox(lcMsg, 16)
 							endcase
 							laFields[i, 23] = loIdxMeta						
 						Case loField.oToken.nType == ttForeignKey
@@ -1042,6 +1123,7 @@ Function evalTables(toTables)
 							loFieldFk = CreateObject("Empty")
 							AddProperty(loFieldFk, "cTable", "")
 							AddProperty(loFieldFk, "cField", "")
+							AddProperty(loFieldFk, "cName", "fk_" + Sys(2015))
 							AddProperty(loFieldFk, "cCurrentTable", loTableData.cTableName)
 							AddProperty(loFieldFk, "cCurrentField", laFields[i, 1])
 							AddProperty(loFieldFk, "cOnDelete", "DEFAULT")
@@ -1067,17 +1149,46 @@ Function evalTables(toTables)
 									loFieldFk.cOnUpdate = loField2.vValue.vLiteral
 									Loop
 								EndIf
+								Local lcMsg
+								Text to lcMsg noshow pretext 7 textmerge
+								    Error en la definición de clave foránea:
+								    Atributo inválido para la definición de una clave foránea: `<<tokenName(loField2.oToken.nType)>>`
 
-								MessageBox("Atributo inválido para la definición de una clave foránea: `" + tokenName(loField2.oToken.nType) + "`", 16)
+								    Ubicación: [<<loField2.oToken.nLine>>:<<loField2.oToken.nCol>>]
+
+								    Asegúrate de utilizar atributos válidos para la definición de la clave foránea.
+								endtext
+								MessageBox(lcMsg, 16)
+								*MessageBox("Atributo inválido para la definición de una clave foránea: `" + tokenName(loField2.oToken.nType) + "`", 16)
 							EndFor
 							laFields[i, 21] = loFieldFk
 						Otherwise
-							MessageBox("Atributo inválido para la definición de un campo: `" + tokenName(loField.oToken.nType) + "`", 16)
+							Local lcMsg
+							Text to lcMsg noshow pretext 7 textmerge
+							    Error en la definición de una columna:
+							    Atributo inválido para la definición de un campo: `<<tokenName(loField.oToken.nType)>>`
+
+							    Ubicación: [<<loField.oToken.nLine>>:<<loField.oToken.nCol>>]
+
+							    Asegúrate de utilizar atributos válidos para la definición de un campo.
+							endtext
+							MessageBox(lcMsg, 16)
+							*MessageBox("Atributo inválido para la definición de un campo: `" + tokenName(loField.oToken.nType) + "`", 16)
 						EndCase
 					EndFor
 				EndFor				
 			Otherwise
-				MessageBox("Atributo inválido para la definición de una tabla: `" + tokenName(loAttribute.oToken.nType) + "`", 16)
+				Local lcMsg
+				Text to lcMsg noshow pretext 7 textmerge
+				    Error en la definición de la tabla:
+				    Atributo inválido para la definición de una tabla: `<<tokenName(loAttribute.oToken.nType)>>`
+
+				    Ubicación: [<<loAttribute.oToken.nLine>>:<<loAttribute.oToken.nCol>>]
+
+				    Asegúrate de utilizar atributos válidos para la definición de la tabla.
+				endtext
+				MessageBox(lcMsg, 16)
+				*MessageBox("Atributo inválido para la definición de una tabla: `" + tokenName(loAttribute.oToken.nType) + "`", 16)
 			EndCase			
 		EndFor
 		=Acopy(laFields, loTableData.aTableFields)
@@ -1166,6 +1277,8 @@ Function tokenName(tnType)
 		Return "ttVarBinary"
 	Case tnType == 211
 		Return "ttBlob"
+	Case tnType == 212
+		Return "ttGuid"
 	Case tnType == 21
 		Return "ttIdent"
 	Case tnType == 22
@@ -1235,33 +1348,60 @@ Function typeToLetter(tcType)
 	tcType = Lower(tcType)
 	DO CASE
 	CASE tcType == "char"
-		Return "C"
+		Return 'C'
 	CASE tcType == "currency"
-		Return "Y"
+		Return 'Y'
 	CASE tcType == "date"
-		Return "D"
+		Return 'D'
 	CASE tcType == "datetime"
-		Return "T"
+		Return 'T'
 	CASE tcType == "double"
-		Return "B"
+		Return 'B'
 	CASE tcType == "float"
-		Return "F"
+		Return 'F'
 	CASE tcType == "int"
-		Return "I"
+		Return 'I'
 	CASE tcType == "bool"
-		Return "L"
+		Return 'L'
 	CASE tcType == "text"
-		Return "M"
+		Return 'M'
 	CASE tcType == "numeric"
-		Return "N"
+		Return 'N'
 	CASE tcType == "varbinary"
-		Return "Q"
+		Return 'Q'
 	CASE InList(tcType, "string", "varchar")
-		Return "V"
+		Return 'V'
 	CASE tcType == "blob"
-		Return "W"
+		Return 'W'
+	Case tcType == "guid"
+		Return 'U'
 	OTHERWISE
-		MessageBox("Tipo de dato desconocido: '" + tcType + "'")
+		Local lcMsg
+		Text to lcMsg noshow pretext 7 textmerge
+		    Tipo de dato desconocido: '<<tcType>>'
+
+		    El tipo de dato proporcionado no coincide con ninguno de los tipos de datos conocidos. Asegúrate de ingresar una letra válida que represente un tipo de dato válido para el motor de base de datos que estás utilizando.
+
+		    Tipos de datos conocidos:
+		    C: Caracter
+		    Y: Decimal
+		    D: Fecha
+		    T: Fecha y hora
+		    B: Decimal con precisión exacta
+		    F: Decimal con precisión aproximada
+		    G: BLOB binario
+		    I: Entero
+		    L: Lógico (booleano)
+		    M: BLOB de texto
+		    N: Número
+		    Q: BLOB de texto (longitud máxima 2GB)
+		    V: Caracter variable (VARCHAR)
+		    W: BLOB de texto (longitud máxima 2GB)
+
+		    Por favor, verifica el tipo de dato ingresado y asegúrate de que sea válido.
+		endtext
+		MessageBox(lcMsg)
+		*MessageBox("Tipo de dato desconocido: '" + tcType + "'")
 		Return Space(1)
 	ENDCASE
 EndFunc
@@ -1281,11 +1421,14 @@ Define Class DBEngine As Custom
 	bUseCA		= .T.
 	bUseSymbolDelimiter = .F.
 	cPKName		= "TID"	
+	nMaxLength  = 0 && Every engine should fill this value.
+	bCanGenerateGUID = .T.
 
 	Dimension aCustomArray[1]
 	Hidden nCounter
 	nCounter = 0
 	bExecuteIndexScriptSeparately = .f.
+	bExecuteFkScriptSeparately = .f.
 	cLeft = ''
 	cRight = ''
 
@@ -1302,8 +1445,7 @@ Define Class DBEngine As Custom
 		Endwith
 	Endproc
 
-	Procedure Connect
-
+	function Connect(tbAddDatabase)
 		If This.nHandle > 0
 			If This.reconnect()
 				Return
@@ -1311,26 +1453,26 @@ Define Class DBEngine As Custom
 		Endif
 
 		Local lcConStr
-		Try
-			lcConStr = This.getConnectionString()
-			This.nHandle = Sqlstringconnect(lcConStr, .T.)
+		lcConStr = This.getConnectionString(tbAddDatabase)
+		This.nHandle = Sqlstringconnect(lcConStr, .T.)
 
-			If This.nHandle <= 0
-				This.sqlError()
-				Return
-			Endif
-			This.applyConnectionSettings()
-			If !Empty(this.cDatabase)
-				this.newDataBase(this.cDatabase)
-				this.selectDatabase()
-			EndIf
-		Catch To loEx
-			This.printException(loEx)
-		Endtry
-	Endproc
+		If This.nHandle <= 0
+			This.sqlError()
+			Return .f.
+		Endif
+		This.applyConnectionSettings()
+		
+		If tbAddDatabase
+			Return && No es necesario crear la base de datos.
+		EndIf
+		
+		this.newDataBase(this.cDatabase)
+		this.selectDatabase()
+		Return .t.
+	EndFunc
 	
 	Function newDataBase(tcDataBase)
-		If Lower(this.Name) == "firebird"
+		If InList(Lower(this.Name), "firebird", "sqlite")
 			Return .t.
 		EndIf
 		Local lcScript, lcCursor, lcDBName
@@ -1345,6 +1487,7 @@ Define Class DBEngine As Custom
 		Use in (lcCursor)
 		
 		If !Empty(lcDBName)
+			this.changeDB(tcDataBase)
 			Return .t.
 		EndIf
 		
@@ -1352,6 +1495,8 @@ Define Class DBEngine As Custom
 		If !This.SQLExec(lcScript)
 			Return .F.
 		EndIf
+		this.changeDB(tcDataBase)
+		
 		Return .t.		
 	EndFunc
 
@@ -1365,7 +1510,15 @@ Define Class DBEngine As Custom
 		EndIf
 
 		If !This.tableExists(lcSqlTableName)
-			MessageBox("La tabla " + lcSqlTableName + " no existe en la base de datos.", 16)
+			Local lcMsg
+			Text to lcMsg noshow pretext 7 textmerge
+			    Error - Tabla Inexistente:
+			    La tabla con el nombre '<<lcSqlTableName>>' no existe en la base de datos.
+
+			    Por favor, asegúrate de que el nombre de la tabla esté escrito correctamente y que la tabla haya sido creada previamente en la base de datos.
+			endtext
+			MessageBox(lcMsg, 16)
+			*MessageBox("La tabla " + lcSqlTableName + " no existe en la base de datos.", 16)
 			Return .f.
 		Endif
 
@@ -1451,13 +1604,9 @@ Define Class DBEngine As Custom
 		Return .t.
 	Endproc
 
-	Procedure changeDB(tcNewDatabase)
-		If Empty(tcNewDatabase)
-			Return
-		Endif
-		This.cDatabase = tcNewDatabase
-		This.selectDatabase()
-	Endproc
+	function changeDB(tcNewDatabase)
+		* Abstract
+	endfunc
 
 	Procedure requery(tcAlias)
 		If Empty(tcAlias)
@@ -1780,7 +1929,15 @@ Define Class DBEngine As Custom
 			Release laDBFList
 		Else
 			If !InList(Upper(JustExt(tcTableOrPath)), "DBC", "DBF", "TMG")
-				MessageBox("Solo se permiten migraciones de ficheros DBF, DBC o TMG", 16)
+				Local lcMsg
+				Text to lcMsg noshow pretext 7 textmerge
+				    Error - Tipo de Archivo Inválido:
+				    Solo se permiten migraciones de ficheros DBF, DBC o TMG.
+
+				    Por favor, asegúrate de que estás intentando migrar un archivo con una extensión válida (DBF, DBC o TMG).
+				endtext
+				MessageBox(lcMsg, 16)
+				*MessageBox("Solo se permiten migraciones de ficheros DBF, DBC o TMG", 16)
 				Return .f.
 			EndIf
 
@@ -1879,7 +2036,20 @@ Define Class DBEngine As Custom
 
 		If SQLExec(This.nHandle, tcSQLCommand, tcCursorName) <= 0
 			=Aerror(laSqlError)
-			Messagebox("SQL ERROR: " + laSqlError[2] + Transform(laSqlError[3]) + CRLF + "QUERY: " + tcSQLCommand, 16, "Error de comunicación")
+			Local lcMsg
+			Text to lcMsg noshow pretext 7 textmerge
+			    Error de Comunicación - Consulta Fallida:
+
+			    Descripción del Error: '<<laSqlError[2]>>' <<Transform(laSqlError[3])>>
+
+			    Consulta SQL Ejecutada:
+			    <<tcSQLCommand>>
+
+			    Por favor, verifica que la conexión con el servidor esté establecida correctamente y que la consulta SQL esté escrita correctamente. Si el problema persiste, asegúrate de que el servidor de base de datos esté en funcionamiento y que no haya problemas de conectividad a la base de datos.
+			endtext
+			MessageBox(lcMsg, 16, "Error de Comunicación")
+
+			*Messagebox("SQL ERROR: " + laSqlError[2] + Transform(laSqlError[3]) + CRLF + "QUERY: " + tcSQLCommand, 16, "Error de comunicación")
 			Return .f.
 		Endif
 
@@ -1888,17 +2058,17 @@ Define Class DBEngine As Custom
 
 	Procedure createTable(tcTableName, tcTableDescription, toComposedIndexes, taFields)
 		Local i, lcScript, lcType, lcName, lcSize, lcDecimal, lbAllowNull, lcLongName, ;
-			lcComment, lnNextValue, lnStepValue, lcDefault, lcLeft, lcRight, loFields, lcFkScript, ;
-			lcFieldsScript, lcInternalID, lbInsertInternalID, loIdxScript
+			lcComment, lnNextValue, lnStepValue, lcDefault, lcLeft, lcRight, loFields, ;
+			lcFieldsScript, lcInternalID, lbInsertInternalID, loIdxScript, loOptions
 		
 		lcLeft  = This.cLeft
 		lcRight = This.cRight
 
-		lcFkScript  		= ''
 		lcFieldsScript 		= ''
-		lcInternalID  		= lcLeft + this.cPKName + lcRight + Space(1) + This.getGUIDDescription()
+		lcInternalID  		= lcLeft + this.cPKName + lcRight + Space(1) + This.getTidScript()
 		lbInsertInternalID 	= .T.
 		loIdxScript			= CreateObject("Collection")
+		loFkScript 			= CreateObject("Collection")
 		
 		lcDefault = Space(1)
 		loFields  = Createobject("Empty")
@@ -1920,6 +2090,13 @@ Define Class DBEngine As Custom
 		=AddProperty(loFields, "tag", "")
 
 		For i = 1 To Alen(taFields, 1)
+			If Upper(taFields[i, 2]) == 'U' && UUID
+				If i > 1
+					lcFieldsScript = lcFieldsScript + ', '
+				EndIf
+				lcFieldsScript = lcFieldsScript + ' ' + This.getUUIDScript()
+				Loop
+			EndIf
 			loFields.Name 		= taFields[i, 1]
 			loFields.Type 		= taFields[i, 2]
 			loFields.Size 		= Alltrim(Str(taFields[i, 3]))
@@ -1938,7 +2115,19 @@ Define Class DBEngine As Custom
 			
 			* Validate types with mandatory length
 			If InList(Upper(loFields.Type), 'C') and Empty(Val(loFields.Size))
-				MessageBox("El tipo de dato CHAR requiere su longitud.", 48)
+				Local lcMsg
+				Text to lcMsg noshow pretext 7 textmerge
+				    Error - Tipo de Dato CHAR sin Longitud:
+
+				    El tipo de dato CHAR requiere que se especifique su longitud. Por favor, asegúrate de agregar la longitud después del tipo de dato CHAR en la definición de la columna.
+
+				    Ejemplo Correcto:
+				    NOMBRE CHAR(50)
+
+				    Por favor, corrige la definición de la tabla para incluir la longitud del tipo CHAR y vuelve a intentarlo.
+				endtext
+				MessageBox(lcMsg, 48)
+				*MessageBox("El tipo de dato CHAR requiere su longitud.", 48)
 				loop
 			EndIf
 			
@@ -1958,36 +2147,20 @@ Define Class DBEngine As Custom
 			lcFieldsScript = lcFieldsScript + lcLeft + loFields.Name + lcRight + Space(1)
 			lcMacro = "this.visit" + loFields.Type + "Type(loFields)"
 			lcValue = &lcMacro
-			lcFieldsScript = lcFieldsScript + lcValue
-
+			
 			If loFields.autoIncrement
+				lcValue = this.changeTypeOnAutoIncrement(lcValue)
 				lbInsertInternalID = .F.
-				lcFieldsScript = lcFieldsScript + ' ' + this.addAutoIncrement()
 			EndIf
+			lcFieldsScript = lcFieldsScript + lcValue
 			
-			If !loFields.allowNull
-				If loFields.addDefault
-					lcFieldsScript = lcFieldsScript + " DEFAULT " + loFields.Default
-				EndIf
-				lcFieldsScript = lcFieldsScript + " NOT NULL "				
-			EndIf
-			
-			If loFields.primaryKey
-				lcFieldsScript = lcFieldsScript + ' ' + this.addPrimaryKey()
-			EndIf									
-
-			If !Empty(loFields.comment)
-				lcFieldsScript = lcFieldsScript + this.addFieldComment(loFields.comment)
-			EndIf
+			lcFieldsScript = lcFieldsScript + this.addFieldOptions(loFields)
 			
 			If !IsNull(loFields.foreignKey)
-				If !Empty(lcFkScript)
-					lcFkScript = lcFkScript + ','
-				EndIf
-				lcFkScript = lcFkScript + ' ' + this.addForeignKey(loFields.foreignKey)
+				loFkScript.Add(this.addForeignKey(loFields.foreignKey))
 			EndIf
 			
-			If Type('loFields.index') == 'O'
+			If !IsNull(loFields.index)
 				loIdxScript.Add(this.addSingleIndex(loFields.index))
 			EndIf
 		EndFor
@@ -1997,29 +2170,42 @@ Define Class DBEngine As Custom
 			lcScript = lcScript + lcInternalID + ','
 		EndIf
 		lcScript = lcScript + lcFieldsScript
-
-		If !Empty(lcFkScript)
-			lcScript = lcScript + ',' + lcFkScript
-		EndIf
+*!*			If !Empty(lcFkScript)
+*!*				lcScript = lcScript + ',' + lcFkScript
+*!*			EndIf
 		
-		Local loComposedScripts
+		Local loComposedScripts, cValue
 		loComposedScripts = CreateObject("Collection")
-		If !IsNull(toComposedIndexes)
+		If toComposedIndexes.count > 0
 			loComposedScripts = this.addComposedIndex(toComposedIndexes)
 		EndIf
 		
+		Local cValue
+		cValue = ''
+		
+		If !this.bExecuteFkScriptSeparately
+			* Agregamos las claves foráneas
+			If loFkScript.count > 0
+				For each cValue in loFkScript
+					lcScript = lcScript + ',' + cValue
+				EndFor
+			EndIf
+		EndIf
+		
 		If !this.bExecuteIndexScriptSeparately
+			cValue = ''
 			* Agregamos los índices individuales
-			If loIdxScript.count > 0				
-				For each cIndex in loIdxScript
-					lcScript = lcScript + ',' + cIndex
+			If loIdxScript.count > 0
+				For each cValue in loIdxScript
+					lcScript = lcScript + ',' + cValue
 				EndFor
 			EndIf
 
 			If loComposedScripts.count > 0
+				cValue = ''
 				* Si tenemos índices compuestos también los agregamos
-				For each lcComposedIndex in loComposedScripts
-					lcScript = lcScript + ',' + lcComposedIndex
+				For each cValue in loComposedScripts
+					lcScript = lcScript + ',' + cValue
 				EndFor
 			EndIf
 		EndIf
@@ -2032,48 +2218,71 @@ Define Class DBEngine As Custom
 		
 		lcScript = lcScript + ';'
 		* POLICIA
-		_cliptext = lcScript
-		MessageBox(lcScript)
+*!*			_cliptext = lcScript
+*!*			MessageBox(lcScript)
 		* POLICIA
 		
-		If this.bExecuteIndexScriptSeparately
-			If This.SQLExec(lcScript)
-				Local cIndex
-				cIndex = ''
-				If loIdxScript.count > 0
-					* Ejecutamos los índices individuales
-					For each cIndex in loIdxScript
-						* POLICIA
-						_cliptext = cIndex
-						MessageBox(cIndex)
-						* POLICIA
-						This.SQLExec(cIndex)
-					EndFor
-				EndIf
-				
-				If loComposedScripts.count > 0
-					cIndex = ''
-					* Ejecutamos los índices compuestos
-					For each cIndex in loComposedScripts
-						* POLICIA
-						_cliptext = cIndex
-						MessageBox(cIndex)
-						* POLICIA
-						This.SQLExec(cIndex)
-					EndFor
-				EndIf
-				Return .t.
-			EndIf
+		If !This.SQLExec(lcScript)
 			Return .f.
-		Else
-			Return This.SQLExec(lcScript)
+		EndIf
+
+		If this.bExecuteFkScriptSeparately
+			cValue = ''
+			* Agregamos las claves foráneas
+			If loFkScript.count > 0
+				For each cValue in loFkScript
+					* POLICIA
+*!*						_cliptext = cValue
+*!*						MessageBox(cValue)
+					* POLICIA
+					This.SQLExec(cValue)
+				EndFor
+			EndIf
+		EndIf
+		
+		If this.bExecuteIndexScriptSeparately
+			cValue = ''
+			If loIdxScript.count > 0
+				* Ejecutamos los índices individuales
+				For each cValue in loIdxScript
+					* POLICIA
+*!*						_cliptext = cValue
+*!*						MessageBox(cValue)
+					* POLICIA
+					This.SQLExec(cValue)
+				EndFor
+			EndIf
+			
+			If loComposedScripts.count > 0
+				cValue = ''
+				* Ejecutamos los índices compuestos
+				For each cValue in loComposedScripts
+					* POLICIA
+*!*						_cliptext = cValue
+*!*						MessageBox(cValue)
+					* POLICIA
+					This.SQLExec(cValue)
+				EndFor
+			EndIf
+			Return .t.
 		EndIf
 	Endproc
 
 	Procedure sqlError
 		Local Array laError[2]
 		Aerror(laError)
-		Messagebox("ERROR: " + Alltrim(Str(laError[1])) + CRLF + "MESSAGE:" + Transform(laError[2]) + Transform(laError[3]), 16, "ERROR")
+		Local lcMsg
+		Text to lcMsg noshow pretext 7 textmerge
+		    ERROR - Error en la Consulta SQL:
+
+		    Código de Error: <<laError[1]>>
+
+		    Mensaje de Error: <<Transform(laError[2]) + Transform(laError[3])>>
+
+		    Por favor, revisa la consulta SQL y asegúrate de que esté correctamente escrita. Verifica que los nombres de tablas, campos y condiciones sean válidos y vuelve a intentarlo.
+		endtext
+		MessageBox(lcMsg, 16)
+		*Messagebox("ERROR: " + Alltrim(Str(laError[1])) + CRLF + "MESSAGE:" + Transform(laError[2]) + Transform(laError[3]), 16, "ERROR")
 	Endproc
 
 	Hidden function updateRowScript(tcOpenChar, tcCloseChar, tcSQLTable, tcKeyField, tcFldState)
@@ -2231,19 +2440,24 @@ Define Class DBEngine As Custom
 
 	Hidden Procedure printException(toError)
 		Local lcMsg
-		lcMsg = Padr("Error:", 20, Space(1)) + Alltrim(Str(toError.ErrorNo))
-		lcMsg = lcMsg + CRLF + Padr("LineNo:", 20, Space(1)) + Alltrim(Str(toError.Lineno))
-		lcMsg = lcMsg + CRLF + Padr("Message:", 20, Space(1)) + Alltrim(toError.Message)
-		lcMsg = lcMsg + CRLF + Padr("Procedure:", 20, Space(1)) + Alltrim(toError.Procedure)
-		lcMsg = lcMsg + CRLF + Padr("Details:", 20, Space(1)) + Alltrim(toError.Details)
-		lcMsg = lcMsg + CRLF + Padr("StackLevel:", 20, Space(1)) + Alltrim(Str(toError.StackLevel))
-		lcMsg = lcMsg + CRLF + Padr("LineContents:", 20, Space(1)) + Alltrim(toError.LineContents)
-		lcMsg = lcMsg + CRLF + Padr("UserValue:", 20, Space(1)) + Alltrim(toError.UserValue)
+		Text to lcMsg noshow pretext 7 textmerge
+		    ERROR - Excepción Controlada:
 
+		    Código de Error: <<toError.ErrorNo>>
+		    Línea No.: <<toError.Lineno>>
+		    Mensaje: <<toError.Message>>
+		    Procedimiento: <<toError.Procedure>>
+		    Detalles: <<toError.Details>>
+		    Nivel de Pila: <<toError.StackLevel>>
+		    Contenido de la Línea: <<toError.LineContents>>
+		    Valor de Usuario: <<toError.UserValue>>
+
+		    Por favor, toma nota de la información proporcionada y contacta al equipo de soporte para obtener asistencia adicional en la resolución de este problema.
+		endtext
 		Messagebox(lcMsg, 16)
 	Endproc
 
-	Hidden Procedure disconnect
+	Procedure disconnect
 		Try
 			If This.nHandle > 0
 				SQLDisconnect(This.nHandle)
@@ -2308,7 +2522,6 @@ Define Class DBEngine As Custom
 		Local lcQuery, lcSchema, lcCursor
 		lcCursor = Sys(2015)
 		This.selectDatabase()
-
 		lcQuery = this.getTableExistsScript(tcTableName)
 
 		If !This.SQLExec(lcQuery, lcCursor)
@@ -2326,10 +2539,14 @@ Define Class DBEngine As Custom
 		* Abstract
 	Endproc
 
-	Function getGUIDDescription
+	Function getTidScript
 		* Abstract
-	Endfunc
-
+	EndFunc
+	
+	Function getUUIDScript
+		* Abstract
+	EndFunc
+	
 	Function fieldExists(tcTable, tcField)
 		Local lcQuery, lcCursor, lbResult
 		This.selectDatabase()
@@ -2498,7 +2715,15 @@ Define Class DBEngine As Custom
 	
 	function dropTable(tcTable)
 		* Abstract
-	endfunc
+	EndFunc
+	
+	Function addFieldOptions(toField)
+		* Abstract
+	EndFunc
+
+	Function changeTypeOnAutoIncrement(tcType)
+		* Abstract
+	EndFunc
 
 	Function visitCType(toFields)
 		* Abstract
@@ -2554,7 +2779,7 @@ Define Class DBEngine As Custom
 
 	Function visitWType(toFields)
 		* Abstract
-	Endfunc
+	EndFunc
 Enddefine
 
 * ==================================================== *
@@ -2564,8 +2789,12 @@ Define Class MSSQL As DBEngine
 
 	Procedure init
 		DoDefault()
+		this.nMaxLength = 128
 		this.cLeft = '['
 		this.cRight = ']'
+		this.bUseSymbolDelimiter = .F.
+        this.bExecuteFkScriptSeparately = .f.
+        this.bExecuteIndexScriptSeparately = .f.
 	endproc
 
 	Function getDummyQuery
@@ -2582,12 +2811,15 @@ Define Class MSSQL As DBEngine
 		Return lcVersion
 	Endfunc
 
-	Function getConnectionString
+	Function getConnectionString(tbAddDatabase)
 		Local lcConStr, lcDriver
 
 		lcConStr = "DRIVER=" + This.cDriver + ";SERVER=" + This.cServer + ";UID=" + This.cUser + ";PWD=" + This.cPassword
 		If This.nPort > 0
 			lcConStr = lcConStr + ";PORT=" + Alltrim(Str(This.nPort))
+		Endif
+		If tbAddDatabase
+			lcConStr = lcConStr + ";DATABASE=" + Alltrim(This.cDatabase)
 		Endif
 
 		Return lcConStr
@@ -2622,17 +2854,28 @@ Define Class MSSQL As DBEngine
 
 	Procedure selectDatabase
 		If Empty(this.cDatabase)
-			MessageBox("Debe especificar una base de datos antes de realizar esta petición.", 16)
+			Local lcMsg
+			Text to lcMsg noshow pretext 7 textmerge
+			    ERROR - Base de Datos No Especificada:
+
+			    Antes de realizar esta petición, asegúrate de haber seleccionado una base de datos para trabajar.
+
+			    Por favor, selecciona una base de datos válida y vuelve a intentar la operación.
+			endtext
+			Messagebox(lcMsg, 16, "Error: Base de Datos No Especificada")
 			Return
 		EndIf
 		This.SQLExec("use " + This.cDatabase)
 	Endproc
 
-	Function getGUIDDescription
-		* Return "UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID()"
+	Function getTidScript
 		Return "INT IDENTITY(1,1) PRIMARY KEY"
 	Endfunc
 
+	Function getUUIDScript
+		Return "UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID()"
+	EndFunc
+	
 	Function getFieldExistsScript(tcTable, tcField)
 		Local lcQuery
 
@@ -2686,7 +2929,7 @@ Define Class MSSQL As DBEngine
 			    SELECT name
 			    FROM sys.key_constraints
 			    WHERE type = 'PK'
-			        AND OBJECT_NAME(parent_object_id) = '<<tcTable>>'
+			        AND OBJECT_NAME(parent_object_id) = '<<this.cLeft + tcTable + this.cRight>>'
 			);
 		ENDTEXT
 
@@ -2737,13 +2980,8 @@ Define Class MSSQL As DBEngine
 		Return "SELECT SCOPE_IDENTITY() AS LAST_ID"
 	EndFunc
 
-	Function getCreateDatabaseScript(tcDatabase)
-		Local lcLeft, lcRight
-		Store "" to lcLeft, lcRight
-		lcLeft = this.cLeft
-		lcRight = this.cRight
-			
-		Return "CREATE DATABASE " + lcLeft + tcDatabase + lcRight + ";"
+	Function getCreateDatabaseScript(tcDatabase)			
+		Return "CREATE DATABASE " + this.cLeft + tcDatabase + this.cRight + ";"
 	EndFunc
 	
 	Function getDataBaseExistsScript(tcDatabase)
@@ -2768,7 +3006,7 @@ Define Class MSSQL As DBEngine
 		lcRight = this.cRight
 				
 		Text to lcScript noshow pretext 7 textmerge
-		FOREIGN KEY (<<lcLeft>><<toFkData.cCurrentField>><<lcRight>>) REFERENCES <<lcLeft>><<toFkData.cTable>><<lcRight>>(<<lcLeft>><<toFkData.cField>><<lcRight>>)
+		FOREIGN KEY (<<lcLeft+toFkData.cCurrentField+lcRight>>) REFERENCES <<lcLeft+toFkData.cTable+lcRight>>(<<lcLeft+toFkData.cField+lcRight>>)
 		ON UPDATE <<lcOnUpdate>>
 		ON DELETE <<lcOnDelete>>
 		endtext
@@ -2783,7 +3021,7 @@ Define Class MSSQL As DBEngine
 		lcRight = this.cRight
 
 		Text to lcScript noshow pretext 7 textmerge
-			INDEX <<toIndex.cName>> <<Iif(toIndex.bUnique, "UNIQUE", "")>> (<<lcLeft>><<toIndex.cField>><<lcRight>> <<toIndex.cSort>>)
+			INDEX <<toIndex.cName>> <<Iif(toIndex.bUnique, "UNIQUE", "")>> (<<lcLeft+toIndex.cField+lcRight>> <<toIndex.cSort>>)
 		EndText
 
 		Return lcScript
@@ -2836,15 +3074,50 @@ Define Class MSSQL As DBEngine
 		Return "PRIMARY KEY"
 	EndFunc	
 	
-	function dropTable(tcTable)	
-		Local lcLeft, lcRight
-		Store "" to lcLeft, lcRight
-		
-		lcLeft = this.cLeft
-		lcRight = this.cRight
-		
-		Return "DROP TABLE IF EXISTS " + lcLeft + tcTable + lcRight + ';'
+	function dropTable(tcTable)			
+		Return "DROP TABLE IF EXISTS " + this.cLeft + tcTable + this.cRight + ';'
 	endfunc
+
+	Function addFieldOptions(toField)
+		Local lcScript
+		lcScript = ''
+		If toField.autoIncrement
+			lcScript = lcScript + ' ' + this.addAutoIncrement()
+		EndIf
+		
+		If !toField.allowNull
+			If toField.addDefault
+				lcScript = lcScript + " DEFAULT " + toField.Default
+			EndIf
+			lcScript = lcScript + " NOT NULL "				
+		EndIf
+		
+		If toField.primaryKey
+			lcScript = lcScript + ' ' + this.addPrimaryKey()
+		EndIf
+
+		Return lcScript
+	EndFunc
+
+	function changeDB(tcNewDatabase)
+		If Empty(tcNewDatabase)
+		    Local lcMsg
+		    Text to lcMsg noshow pretext 7 textmerge
+		        ERROR - Base de Datos No Especificada:
+
+		        No has especificado el nombre de la base de datos que deseas utilizar. Por favor, asegúrate de proporcionar el nombre de la base de datos y vuelve a intentarlo.
+		    endtext
+		    MessageBox(lcMsg, 16)
+		    Return .f.
+		Endif
+		This.cDatabase = tcNewDatabase
+		This.selectDatabase()
+		Return .t.
+	EndFunc
+
+	Function changeTypeOnAutoIncrement(tcType)
+		Return tcType
+	EndFunc
 
 	* C = Character
 	Function visitCType(toFields)
@@ -2928,7 +3201,7 @@ Define Class MSSQL As DBEngine
 	Function visitWType(toFields)
 		toFields.Default = "0x"
 		Return "IMAGE"
-	Endfunc
+	EndFunc
 Enddefine
 
 * ==================================================== *
@@ -2938,8 +3211,10 @@ Define Class MySQL As DBEngine
 
 	Procedure init
 		DoDefault()
+		this.nMaxLength = 64
 		this.cLeft = '`'
 		this.cRight = '`'
+		this.bUseSymbolDelimiter = .F.
 	endproc
 
 	Function getDummyQuery
@@ -2956,14 +3231,16 @@ Define Class MySQL As DBEngine
 		Return lcVersion
 	Endfunc
 
-	Function getConnectionString
+	Function getConnectionString(tbAddDatabase)
 		Local lcConStr, lcDriver
 
 		lcConStr = "DRIVER={" + This.cDriver + "};SERVER=" + This.cServer + ";USER=" + This.cUser + ";PASSWORD=" + This.cPassword
 		If This.nPort > 0
 			lcConStr = lcConStr + ";PORT=" + Alltrim(Str(This.nPort))
 		Endif
-
+		If tbAddDatabase
+			lcConStr = lcConStr + ";DATABASE=" + Alltrim(This.cDatabase)
+		Endif
 		Return lcConStr
 	Endfunc
 
@@ -2998,9 +3275,13 @@ Define Class MySQL As DBEngine
 		This.SQLExec("use " + This.cDatabase)
 	Endproc
 
-	Function getGUIDDescription
-		Return "int unsigned primary key NOT NULL auto_increment"
+	Function getTidScript
+		Return "INT AUTO_INCREMENT PRIMARY KEY"
 	Endfunc
+
+	Function getUUIDScript
+		Return "VARCHAR(36) PRIMARY KEY NOT NULL"
+	EndFunc
 
 	Function getFieldExistsScript(tcTable, tcField)
 		Local lcQuery
@@ -3041,7 +3322,7 @@ Define Class MySQL As DBEngine
 		TEXT to lcQuery noshow pretext 7 textmerge
 			SELECT COLUMN_NAME
 			FROM INFORMATION_SCHEMA.COLUMNS
-			WHERE TABLE_NAME = '<<tcTable>>' AND TABLE_SCHEMA = '<<this.cDatabase>>';
+			WHERE TABLE_NAME = '<<this.cLeft+tcTable+this.cRight>>' AND TABLE_SCHEMA = '<<this.cLeft+this.cDatabase+this.cRight>>';
 		ENDTEXT
 
 		Return lcQuery
@@ -3052,8 +3333,8 @@ Define Class MySQL As DBEngine
 		TEXT to lcScript noshow pretext 7 textmerge
 			SELECT COLUMN_NAME
 			FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
-			WHERE TABLE_SCHEMA = '<<this.cDatabase>>'
-			  AND TABLE_NAME = '<<tcTable>>'
+			WHERE TABLE_SCHEMA = '<<this.cLeft+this.cDatabase+this.cRight>>'
+			  AND TABLE_NAME = '<<this.cLeft+tcTable+this.cRight>>'
 			  AND CONSTRAINT_NAME = 'PRIMARY';
 		ENDTEXT
 
@@ -3128,7 +3409,7 @@ Define Class MySQL As DBEngine
 		lcClose = this.cRight
 				
 		Text to lcScript noshow pretext 7 textmerge
-		FOREIGN KEY (<<lcOPen>><<toFkData.cCurrentField>><<lcClose>>) REFERENCES <<lcOPen>><<toFkData.cTable>><<lcClose>>(<<lcOPen>><<toFkData.cField>><<lcClose>>)
+		FOREIGN KEY (<<lcOPen+toFkData.cCurrentField+lcClose>>) REFERENCES <<lcOPen+toFkData.cTable+lcClose>>(<<lcOPen+toFkData.cField+lcClose>>)
 		ON UPDATE <<lcOnUpdate>>
 		ON DELETE <<lcOnDelete>>
 		endtext		
@@ -3154,11 +3435,7 @@ Define Class MySQL As DBEngine
 	EndFunc	
 
 	function dropTable(tcTable)
-		Local lcOPen, lcClose
-		Store "" to lcOPen, lcClose
-		lcOPen = this.cLeft
-		lcClose = this.cRight
-		Return "DROP TABLE IF EXISTS " + lcOPen + tcTable + lcClose + ';'
+		Return "DROP TABLE IF EXISTS " + this.cLeft + tcTable + this.cRight + ';'
 	endfunc
 
 	Function addSingleIndex(toIndex)
@@ -3167,7 +3444,7 @@ Define Class MySQL As DBEngine
 		lcLeft = this.cLeft
 		lcRight = this.cRight
 		Text to lcScript noshow pretext 7 textmerge
-			<<Iif(toIndex.bUnique, "UNIQUE", "")>> INDEX <<toIndex.cName>> (<<lcLeft>><<toIndex.cField>><<lcRight>> <<toIndex.cSort>>)
+			<<Iif(toIndex.bUnique, "UNIQUE", "")>> INDEX <<toIndex.cName>> (<<lcLeft+toIndex.cField+lcRight>> <<toIndex.cSort>>)
 		EndText
 
 		Return lcScript
@@ -3199,7 +3476,52 @@ Define Class MySQL As DBEngine
 		EndFor
 		Return loResult
 	EndFunc
+
+	Function addFieldOptions(toField)
+		Local lcScript
+		lcScript = ''
+		If toField.autoIncrement
+			lcScript = lcScript + ' ' + this.addAutoIncrement()
+		EndIf
+		
+		If !toField.allowNull
+			If toField.addDefault
+				lcScript = lcScript + " DEFAULT " + toField.Default
+			EndIf
+			lcScript = lcScript + " NOT NULL "				
+		EndIf
+		
+		If toField.primaryKey
+			lcScript = lcScript + ' ' + this.addPrimaryKey()
+		EndIf									
+
+		If !Empty(toField.comment)
+			lcScript = lcScript + this.addFieldComment(toField.comment)
+		EndIf
+
+		Return lcScript
+	EndFunc
+
+	Function changeDB(tcNewDatabase)
+		If Empty(tcNewDatabase)
+		    Local lcMsg
+		    Text to lcMsg noshow pretext 7 textmerge
+		        ERROR - Base de Datos No Especificada:
+
+		        No has especificado el nombre de la base de datos que deseas utilizar. Por favor, asegúrate de proporcionar el nombre de la base de datos y vuelve a intentarlo.
+		    endtext
+		    MessageBox(lcMsg, 16)
+		    Return .f.
+		Endif
+		This.cDatabase = tcNewDatabase
+		This.selectDatabase()
+		Return .t.
+	EndFunc
 	
+	Function changeTypeOnAutoIncrement(tcType)
+		Return tcType
+	EndFunc
+
 	* C = Character
 	Function visitCType(toFields)
 		Return "CHAR(" + toFields.Size + ")"
@@ -3290,7 +3612,7 @@ Define Class MySQL As DBEngine
 	Function visitWType(toFields)
 		toFields.addDefault = .F.
 		Return "BLOB"
-	Endfunc
+	EndFunc
 EndDefine
 
 * ==================================================== *
@@ -3299,11 +3621,14 @@ EndDefine
 Define Class Firebird As DBEngine
 
 	Procedure init
-		DoDefault()		
+		DoDefault()	
+		this.nMaxLength = 31
 		this.cLeft = '"'
 		this.cRight = '"'
 		this.bUseSymbolDelimiter = .F.
+		this.bExecuteFkScriptSeparately = .t.
 		this.bExecuteIndexScriptSeparately = .t.
+		this.bCanGenerateGUID = .f.
 	EndProc
 
     Function getDummyQuery
@@ -3320,7 +3645,7 @@ Define Class Firebird As DBEngine
         Return lcVersion
     Endfunc
 
-    Function getConnectionString
+    Function getConnectionString(tbAddDatabase)
         Local lcConStr, lcPort
         lcConStr = "DRIVER=" + this.cDriver + ";DBNAME=" + This.cDatabase + ";UID=" + This.cUser + ";PWD=" + This.cPassword + ";"
 
@@ -3356,7 +3681,7 @@ Define Class Firebird As DBEngine
         TEXT to lcQuery noshow pretext 7 textmerge
             SELECT RDB$RELATION_NAME AS TableName
             FROM RDB$RELATIONS
-            WHERE RDB$RELATION_NAME = '<<lcLeft>><<tcTableName>><<lcRight>>'
+            WHERE RDB$RELATION_NAME = '<<lcLeft+tcTableName+lcRight>>'
         ENDTEXT
 
         Return lcQuery
@@ -3366,9 +3691,13 @@ Define Class Firebird As DBEngine
         * No aplica
     Endproc
 
-    Function getGUIDDescription
-        Return "CHAR(16) CHARACTER SET OCTETS"
+    Function getTidScript
+        Return "INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY"
     Endfunc
+
+	Function getUUIDScript
+		Return "VARCHAR(36) NOT NULL PRIMARY KEY"
+	EndFunc
 
     Function getFieldExistsScript(tcTable, tcField)
         Local lcQuery, lcLeft, lcRight
@@ -3385,7 +3714,7 @@ Define Class Firebird As DBEngine
         TEXT to lcQuery noshow pretext 7 textmerge
             SELECT RDB$FIELD_NAME AS FieldName
             FROM RDB$RELATION_FIELDS
-            WHERE RDB$RELATION_NAME = '<<lcLeft>><<tcTable>><<lcRight>>' AND RDB$FIELD_NAME = '<<lcLeft>><<tcField>><<lcRight>>';
+            WHERE RDB$RELATION_NAME = '<<lcLeft+tcTable+lcRight>>' AND RDB$FIELD_NAME = '<<lcLeft+tcField+lcRight>>';
         ENDTEXT
 
         Return lcQuery
@@ -3396,7 +3725,7 @@ Define Class Firebird As DBEngine
     Endfunc
 
     Function getNewGuidScript
-        Return "SELECT CAST(GEN_UUID() AS CHAR(16) CHARACTER SET OCTETS) AS GUID FROM RDB$DATABASE"
+        * Firebird no tiene forma de generar un UUID().
     Endfunc
 
     Function getTablesScript
@@ -3425,7 +3754,7 @@ Define Class Firebird As DBEngine
         TEXT to lcQuery noshow pretext 7 textmerge
             SELECT RDB$FIELD_NAME AS FieldName
             FROM RDB$RELATION_FIELDS
-            WHERE RDB$RELATION_NAME = '<<lcLeft>><<tcTable>><<lcRight>>'
+            WHERE RDB$RELATION_NAME = '<<lcLeft+tcTable+lcRight>>'
         ENDTEXT
 
         Return lcQuery
@@ -3446,7 +3775,7 @@ Define Class Firebird As DBEngine
             SELECT SEG.RDB$FIELD_NAME AS FieldName
             FROM RDB$RELATION_CONSTRAINTS CON
             JOIN RDB$INDEX_SEGMENTS SEG ON CON.RDB$INDEX_NAME = SEG.RDB$INDEX_NAME
-            WHERE CON.RDB$RELATION_NAME = '<<lcLeft>><<tcTable>><<lcRight>>' AND CON.RDB$CONSTRAINT_TYPE = 'PRIMARY KEY'
+            WHERE CON.RDB$RELATION_NAME = '<<lcLeft+tcTable+lcRight>>' AND CON.RDB$CONSTRAINT_TYPE = 'PRIMARY KEY'
         ENDTEXT
 
         Return lcScript
@@ -3460,17 +3789,19 @@ Define Class Firebird As DBEngine
         * Abstract
     Endproc
 
-    Function setEnvironment
-        Local loEnv
-        loEnv = CreateObject("Collection")        
-        loEnv.Add(Set("Date"), 'date')
-        loEnv.Add(Set("Century"), 'century')
+	function setEnvironment
+		Local loEnv
+		loEnv = CreateObject("Collection")		
+		loEnv.Add(Set("Date"), 'date')
+		loEnv.Add(Set("Century"), 'century')
+		loEnv.Add(Set("Mark"), 'mark')				
 
-        Set Date To Dmy
-        Set Century On
+		Set Date To YMD
+		Set Century On
+		Set Mark To '-'
 
-        Return loEnv
-    Endfunc
+		Return loEnv
+	EndFunc
 
     Procedure restoreEnvironment(toEnv)
         Local lcDate, lcCentury
@@ -3505,14 +3836,6 @@ Define Class Firebird As DBEngine
         Return "SELECT * FROM " + lcLeft + tcTable + lcRight
     Endfunc
 
-    Function getCloseTableScript()
-        Return ""
-    Endfunc
-
-    Function getCloseCursorScript()
-        Return ""
-    Endfunc
-
     Function addAutoIncrement()
         Return "GENERATED BY DEFAULT AS IDENTITY"
     Endfunc
@@ -3521,19 +3844,13 @@ Define Class Firebird As DBEngine
         Return "PRIMARY KEY"
     Endfunc
 
-	function dropTable(tcTable)
-		Local lcScript, lcOPen, lcClose
-		Store "" to lcLeft, lcRight
-		
-		If this.bUseSymbolDelimiter
-			lcLeft = this.cLeft
-			lcRight = this.cRight
-		Else
+	function dropTable(tcTable)		
+		If !this.bUseSymbolDelimiter
 			tcTable = Upper(tcTable)
 		EndIf
 		
 		Text to lcScript noshow pretext 7 textmerge
-			DROP TABLE <<lcLeft>><<tcTable>><<lcRight>>;
+			DROP TABLE <<this.cLeft+tcTable+this.cRight>>;
 		endtext
 		Return lcScript
 	EndFunc
@@ -3553,7 +3870,7 @@ Define Class Firebird As DBEngine
 			tcDatabase = Upper(tcDatabase)
 		EndIf
 		Text to lcScript noshow pretext 7 textmerge
-			SELECT 1 FROM rdb$database WHERE LOWER(rdb$database_name) = LOWER('<<lcLeft>><<tcDatabase>><<lcRight>>')
+			SELECT 1 FROM rdb$database WHERE LOWER(rdb$database_name) = LOWER('<<lcLeft+tcDatabase+lcRight>>')
 		EndText
 		Return lcScript
 	EndFunc
@@ -3570,21 +3887,19 @@ Define Class Firebird As DBEngine
         Local lcScript, lcOnUpdate, lcOnDelete, lcOPen, lcClose
         lcOnUpdate = This.getForeignKeyValue(toFkData.cOnUpdate)
         lcOnDelete = This.getForeignKeyValue(toFkData.cOnDelete)
-		Store "" to lcOPen, lcClose
+		lcOPen = this.cLeft
+		lcClose = this.cRight
 		
-		If this.bUseSymbolDelimiter
-			lcOPen  = this.cLeft
-			lcClose = this.cRight
-		Else
+		If !this.bUseSymbolDelimiter
 			toFkData.cCurrentField = Upper(toFkData.cCurrentField)
 			toFkData.cField = Upper(toFkData.cField)
 			toFkData.cTable = Upper(toFkData.cTable)
 		EndIf
 		        
         TEXT to lcScript noshow pretext 7 textmerge
-            CONSTRAINT <<toFkData.cCurrentTable>><<toFkData.cCurrentField>>_FK
-            FOREIGN KEY (<<lcOPen>><<toFkData.cCurrentField>><<lcClose>>)
-            REFERENCES <<lcOPen>><<toFkData.cTable>><<lcClose>>(<<lcOPen>><<toFkData.cField>><<lcClose>>)
+        	ALTER TABLE <<lcOPen+toFkData.cCurrentTable+lcClose>> ADD CONSTRAINT <<lcOPen+toFkData.cName+lcClose>> 
+            FOREIGN KEY (<<lcOPen+toFkData.cCurrentField+lcClose>>)
+            REFERENCES <<lcOPen+toFkData.cTable+lcClose>>(<<lcOPen+toFkData.cField+lcClose>>)
             ON UPDATE <<lcOnUpdate>>
             ON DELETE <<lcOnDelete>>
         endtext
@@ -3593,11 +3908,15 @@ Define Class Firebird As DBEngine
     Endfunc
 
     Function getForeignKeyValue(tcValue)
-        If Upper(tcValue) == "NO ACTION"
-            Return "NO ACTION"
-        Else
-            Return "CASCADE"
-        Endif
+		Do case
+		Case upper(tcValue) == 'NULL'
+			Return 'SET NULL'
+		Case upper(tcValue) == 'DEFAULT'
+			Return 'SET DEFAULT'
+		Case upper(tcValue) == 'RESTRICT'
+			Return 'NO ACTION'
+		EndCase
+		Return tcValue
     Endfunc
 
 	Function addSingleIndex(toIndex)
@@ -3609,7 +3928,7 @@ Define Class Firebird As DBEngine
 			lcRight = this.cRight
 		EndIf
 		Text to lcScript noshow pretext 7 textmerge
-			CREATE <<Iif(toIndex.bUnique, "UNIQUE", "")>> <<toIndex.cSort>> INDEX <<toIndex.cName>> ON <<lcLeft>><<toIndex.cTable>><<lcRight>>(<<lcLeft>><<toIndex.cField>><<lcRight>>);
+			CREATE <<Iif(toIndex.bUnique, "UNIQUE", "")>> <<toIndex.cSort>> INDEX <<toIndex.cName>> ON <<lcLeft+toIndex.cTable+lcRight>>(<<lcLeft+toIndex.cField+lcRight>>);
 		EndText
 
 		Return lcScript
@@ -3634,7 +3953,7 @@ Define Class Firebird As DBEngine
 				EndFor
 
 				Text to lcScript noshow pretext 7 textmerge
-					CREATE <<Iif(loComposed.bUnique, "UNIQUE", "")>> <<loComposed.cSort>> INDEX <<loComposed.cName>> ON <<lcLeft>><<loComposed.cTable>><<lcRight>>(<<lcColumns>>)
+					CREATE <<Iif(loComposed.bUnique, "UNIQUE", "")>> <<loComposed.cSort>> INDEX <<loComposed.cName>> ON <<lcLeft+loComposed.cTable+lcRight>>(<<lcColumns>>)
 				EndText
 				loResult.Add(lcScript)
 			EndFor
@@ -3642,6 +3961,59 @@ Define Class Firebird As DBEngine
 		Return loResult
 	EndFunc
 	
+	Function addFieldOptions(toField)
+		Local lcScript
+		lcScript = ''
+		If toField.autoIncrement
+			lcScript = lcScript + ' ' + this.addAutoIncrement()
+		EndIf
+		
+		If !toField.allowNull
+			If toField.addDefault
+				lcScript = lcScript + " DEFAULT " + toField.Default
+			EndIf
+			lcScript = lcScript + " NOT NULL "				
+		EndIf
+		
+		If toField.primaryKey
+			lcScript = lcScript + ' ' + this.addPrimaryKey()
+		EndIf
+
+		Return lcScript
+	EndFunc
+
+	function changeDB(tcNewDatabase)
+		If Empty(tcNewDatabase)
+		    Local lcMsg
+		    Text to lcMsg noshow pretext 7 textmerge
+		        ERROR - Base de Datos No Especificada:
+
+		        No has especificado el nombre de la base de datos que deseas utilizar. Por favor, asegúrate de proporcionar el nombre de la base de datos y vuelve a intentarlo.
+		    endtext
+		    MessageBox(lcMsg, 16)
+		    Return .f.
+		Endif
+
+		If !File(tcNewDatabase)
+		    Local lcMsg
+		    Text to lcMsg noshow pretext 7 textmerge
+		        ERROR - Base de Datos Inexistente:
+
+		        La base de datos con el nombre '<<tcNewDatabase>>' no existe o no se puede encontrar en el sistema de archivos local. Por favor, verifica que el nombre de la base de datos sea correcto y que la base de datos haya sido creada previamente.
+		    endtext
+		    MessageBox(lcMsg, 16)
+		    Return
+		Endif
+
+		This.cDatabase = tcNewDatabase
+		this.disconnect()
+		Return this.connect(.t.)
+	EndFunc
+
+	Function changeTypeOnAutoIncrement(tcType)
+		Return tcType
+	EndFunc
+
 	* C = Character
     Function visitCType(toFields)
         Return "CHAR(" + toFields.Size + ")"
@@ -3649,7 +4021,7 @@ Define Class Firebird As DBEngine
 
     Function visitYType(toFields)
     	toFields.Default = "0.0"
-        Return "DECIMAL(18,4)"
+        Return "DECIMAL(" + toFields.Size + "," + toFields.Decimal + ")"
     Endfunc
 
     Function visitDType(toFields)
@@ -3708,5 +4080,910 @@ Define Class Firebird As DBEngine
 
     Function visitWType(toFields)
         Return "BLOB SUB_TYPE 0"
+    EndFunc	    
+EndDefine
+
+* ==================================================== *
+* SQLite
+* ==================================================== *
+Define Class SQLite As DBEngine
+
+	Procedure init
+		DoDefault()
+		this.nMaxLength = 128
+		this.cLeft = '"'
+		this.cRight = '"'
+		this.bUseSymbolDelimiter = .F.
+		this.bExecuteIndexScriptSeparately = .t.
+	EndProc
+
+	Function getDummyQuery
+		Return "SELECT 1"
+	Endfunc
+
+	Function getVersion
+		Local lcCursor, lcVersion
+		lcCursor = Sys(2015)
+		This.SQLExec("SELECT sqlite_version() AS 'VER'", lcCursor)
+		lcVersion = &lcCursor..VER
+		Use In (lcCursor)
+
+		Return lcVersion
+	Endfunc
+
+	Function getConnectionString(tbAddDatabase)
+		Local lcConStr
+
+		Text to lcConStr noshow pretext 15 textmerge
+			DRIVER=<<this.cDriver>>;
+			DATABASE=<<This.cDatabase>>;
+			UID=<<Iif(Empty(this.cUser),'', this.cUser)>>;
+			PWD=<<Iif(Empty(this.cPassword),'', this.cPassword)>>;
+			LongNames=0;
+			TimeOut=1000;
+			NoTXN=0;
+			SyncPragma=NORMAL;
+			StepAPI=0
+		endtext
+
+		Return lcConStr
+	Endfunc
+
+	Procedure beginTransaction
+		This.SQLExec("BEGIN TRANSACTION;")
+	Endproc
+
+	Procedure endTransaction
+		This.SQLExec("COMMIT;")
+	Endproc
+
+	Procedure cancelTransaction
+		This.SQLExec("ROLLBACK;")
+	Endproc
+
+	Function getTableExistsScript(tcTableName)
+		Local lcQuery, lcLeft, lcRight
+		Store "" to lcLeft, lcRight
+
+		If this.bUseSymbolDelimiter
+			lcLeft = this.cLeft
+			lcRight = this.cRight
+		EndIf
+
+		TEXT to lcQuery noshow pretext 7 textmerge
+			SELECT name AS TableName
+			FROM sqlite_master
+			WHERE type='table' AND name = '<<lcLeft+tcTableName+lcRight>>';
+		ENDTEXT
+
+		Return lcQuery
+	Endfunc
+
+	Procedure selectDatabase
+		* No aplica para SQLite
+	Endproc
+
+	Function getTidScript
+		Return "PRIMARY KEY AUTOINCREMENT"
+	Endfunc
+
+	Function getUUIDScript
+		Return "VARCHAR(36) PRIMARY KEY NOT NULL"
+	EndFunc
+
+	Function getFieldExistsScript(tcTable, tcField)
+		Local lcQuery, lcLeft, lcRight
+		Store "" to lcLeft, lcRight
+
+		If this.bUseSymbolDelimiter
+			lcLeft = this.cLeft
+			lcRight = this.cRight
+		EndIf
+
+		TEXT to lcQuery noshow pretext 7 textmerge
+			SELECT name AS FieldName
+			FROM pragma_table_info('<<lcLeft+tcTable+lcRight>>')
+			WHERE name = '<<lcLeft+tcField+lcRight>>';
+		ENDTEXT
+
+		Return lcQuery
+	Endfunc
+
+	Function getServerDateScript
+		Return "SELECT CURRENT_TIMESTAMP AS SERTIME;"
+	Endfunc
+
+	Function getNewGuidScript
+		Return "SELECT LOWER(HEX(RANDOMBLOB(16))) AS GUID;"
+	Endfunc
+
+	Function getTablesScript
+		Local lcQuery
+
+		TEXT TO lcQuery NOSHOW PRETEXT 7 TEXTMERGE
+			SELECT name AS TableName
+			FROM sqlite_master
+			WHERE type='table';
+		ENDTEXT
+
+		Return lcQuery
+	Endfunc
+
+	Function getTableFieldsScript(tcTable)
+		Local lcQuery, lcLeft, lcRight
+		Store "" to lcLeft, lcRight
+
+		If this.bUseSymbolDelimiter
+			lcLeft = this.cLeft
+			lcRight = this.cRight
+		EndIf
+
+		TEXT to lcQuery noshow pretext 7 textmerge
+			SELECT name AS FieldName
+			FROM pragma_table_info('<<lcLeft+tcTable+lcRight>>');
+		ENDTEXT
+
+		Return lcQuery
+	Endfunc
+
+	Procedure getPrimaryKeyScript(tcTable)
+		Local lcScript, lcLeft, lcRight
+		Store "" to lcLeft, lcRight
+
+		If this.bUseSymbolDelimiter
+			lcLeft = this.cLeft
+			lcRight = this.cRight
+		EndIf
+
+		TEXT to lcScript noshow pretext 7 textmerge
+			SELECT sql
+			FROM sqlite_master
+			WHERE type='table' AND name='<<lcLeft+tcTable+lcRight>>';
+		ENDTEXT
+
+		* Extracting the primary key from the table creation script
+		Local lnStart, lnEnd
+		lnStart = AT('CONSTRAINT', lcScript) + 11
+		lnEnd = AT('PRIMARY KEY', lcScript) - 3
+		lcScript = SUBSTR(lcScript, lnStart, lnEnd - lnStart)
+
+		Return lcScript
+	Endproc
+
+	Function createTableOptions
+		Return ""
+	Endfunc
+
+	function setEnvironment
+		Local loEnv
+		loEnv = CreateObject("Collection")		
+		loEnv.Add(Set("Date"), 'date')
+		loEnv.Add(Set("Century"), 'century')
+		loEnv.Add(Set("Mark"), 'mark')				
+
+		Set Date To YMD
+		Set Century On
+		Set Mark To '-'
+
+		Return loEnv
+	EndFunc
+
+	Procedure restoreEnvironment(toEnv)
+		* No aplica para SQLite
+	Endproc
+
+	Function formatDateOrDateTime(tdValue)
+		If Empty(tdValue)
+			If Type('tdValue') == 'D'
+				Return CTOD('0001-01-01')
+			Endif
+			Return CTOT('0001-01-01 00:00:00')
+		Endif
+		Return tdValue
+	Endfunc
+
+	Function getOpenTableScript(tcTable)
+		Return "SELECT * FROM " + tcTable
+	Endfunc
+
+	Function addAutoIncrement
+		Return "AUTOINCREMENT"
+	Endfunc
+
+	Function addPrimaryKey
+		Return "PRIMARY KEY"
+	Endfunc
+
+	Function dropTable(tcTable)
+		Return "DROP TABLE IF EXISTS " + this.cLeft + tcTable + this.cRight + ';'
+	Endfunc
+
+	Function getCreateDatabaseScript(tcDatabase)
+		Return ""
+	Endfunc
+
+	Function getDataBaseExistsScript(tcDatabase)
+		Return ""
+	Endfunc
+
+	Function addFieldComment(tcComment)
+		Return ""
+	Endfunc
+
+	Function addTableComment(tcComment)
+		Return ""
+	Endfunc
+
+    Function addForeignKey(toFkData)
+        Local lcScript, lcOnUpdate, lcOnDelete, lcOPen, lcClose
+        lcOnUpdate = This.getForeignKeyValue(toFkData.cOnUpdate)
+        lcOnDelete = This.getForeignKeyValue(toFkData.cOnDelete)
+		Store "" to lcOPen, lcClose
+		
+		lcOPen  = this.cLeft
+		lcClose = this.cRight
+		        
+        TEXT to lcScript noshow pretext 7 textmerge        	
+            FOREIGN KEY (<<lcOPen+toFkData.cCurrentField+lcClose>>)
+            REFERENCES <<lcOPen+toFkData.cTable+lcClose>>(<<lcOPen+toFkData.cField+lcClose>>)
+            ON UPDATE <<lcOnUpdate>>
+            ON DELETE <<lcOnDelete>>
+        endtext
+
+        Return lcScript
     Endfunc
-Enddefine
+
+    Function getForeignKeyValue(tcValue)
+		Do case
+		Case upper(tcValue) == 'NULL'
+			Return 'SET NULL'
+		Case upper(tcValue) == 'DEFAULT'
+			Return 'SET DEFAULT'
+		Case upper(tcValue) == 'RESTRICT'
+			Return 'NO ACTION'
+		EndCase
+		Return tcValue
+    Endfunc
+
+	Function addSingleIndex(toIndex)
+		Local lcScript, lcLeft, lcRight
+		Store "" to lcLeft, lcRight
+		
+		If this.bUseSymbolDelimiter
+			lcLeft = this.cLeft
+			lcRight = this.cRight
+		EndIf
+		Text to lcScript noshow pretext 7 textmerge
+			CREATE <<Iif(toIndex.bUnique, "UNIQUE", "")>> INDEX <<toIndex.cName>> ON <<lcLeft+toIndex.cTable+lcRight>>(<<lcLeft+toIndex.cField+lcRight>>);
+		EndText
+
+		Return lcScript
+	EndFunc
+
+	Function addComposedIndex(toIndex)
+		Local lcScript, lcLeft, lcRight, lcColumns, loResult
+		Store "" to lcLeft, lcRight, lcColumns
+
+		lcLeft = this.cLeft
+		lcRight = this.cRight
+		loResult = CreateObject("Collection")
+
+		For each loComposed in toIndex			
+			For each loColumn in loComposed.oColumns
+				lcColumns = ''
+				For each loField in loColumn
+					If !Empty(lcColumns)
+						lcColumns = lcColumns + ','
+					EndIf
+					lcColumns = lcColumns + ' ' + lcLeft + loField.cName + lcRight
+				EndFor
+
+				Text to lcScript noshow pretext 7 textmerge
+					CREATE <<Iif(loComposed.bUnique, "UNIQUE", "")>> INDEX <<loComposed.cName>> ON <<lcLeft+loComposed.cTable+lcRight>>(<<lcColumns>>)
+				EndText
+				loResult.Add(lcScript)
+			EndFor
+		EndFor
+		Return loResult
+	EndFunc
+
+	Function addFieldOptions(toField)
+		Local lcScript
+		lcScript = ''
+		
+		If toField.primaryKey
+			lcScript = lcScript + ' ' + this.addPrimaryKey()
+		EndIf									
+
+		If toField.autoIncrement
+			lcScript = lcScript + ' ' + this.addAutoIncrement()
+		EndIf
+
+		If !toField.allowNull
+			If toField.addDefault
+				lcScript = lcScript + " DEFAULT " + toField.Default
+			EndIf
+			lcScript = lcScript + " NOT NULL "				
+		EndIf
+
+		Return lcScript
+	EndFunc
+
+	function changeDB(tcNewDatabase)
+		If Empty(tcNewDatabase)
+		    Local lcMsg
+		    Text to lcMsg noshow pretext 7 textmerge
+		        ERROR - Base de Datos No Especificada:
+
+		        No has especificado el nombre de la base de datos que deseas utilizar. Por favor, asegúrate de proporcionar el nombre de la base de datos y vuelve a intentarlo.
+		    endtext
+		    MessageBox(lcMsg, 16)
+		    Return .f.
+		Endif
+
+		If !File(tcNewDatabase)
+		    Local lcMsg
+		    Text to lcMsg noshow pretext 7 textmerge
+		        ERROR - Base de Datos Inexistente:
+
+		        La base de datos con el nombre '<<tcNewDatabase>>' no existe o no se puede encontrar en el sistema de archivos local. Por favor, verifica que el nombre de la base de datos sea correcto y que la base de datos haya sido creada previamente.
+		    endtext
+		    MessageBox(lcMsg, 16)
+		    Return
+		Endif
+
+		This.cDatabase = tcNewDatabase
+		this.disconnect()
+		Return this.connect(.t.)
+	EndFunc
+
+	Function changeTypeOnAutoIncrement(tcType)
+		Return tcType
+	EndFunc
+
+	* C = Character
+	Function visitCType(toFields)
+		If Val(toFields.Size) > 0
+			Return "TEXT(" + toFields.Size + ")"
+		EndIf
+		Return "TEXT"
+	Endfunc
+
+	* Y = Currency
+	Function visitYType(toFields)
+		If Val(toFields.Decimal) > 0
+			toFields.Default = "0.0"
+		Else
+			toFields.Default = '0'
+		Endif
+		Return "NUMERIC(" + toFields.Size + "," + toFields.Decimal + ")"
+	Endfunc
+
+	* D = Date
+	Function visitDType(toFields)
+		toFields.Default = "'0001-01-01'"
+		Return "DATE"
+	Endfunc
+
+	* T = DateTime
+	Function visitTType(toFields)
+		toFields.Default = "'0001-01-01 00:00:00.000'"
+		Return "DATETIME"
+	Endfunc
+
+	* B = Double
+	Function visitBType(toFields)
+		toFields.Default = "0.0"
+		Return "DOUBLE"
+	Endfunc
+
+	* F = Float
+	Function visitFType(toFields)
+		toFields.Default = "0.0"
+		Return "REAL"
+	Endfunc
+
+	* G = General
+	Function visitGType(toFields)
+		Return "BLOB"
+	Endfunc
+
+	* I = Integer
+	Function visitIType(toFields)
+		Return "INTEGER"
+	Endfunc
+
+	* L = Logical
+	Function visitLType(toFields)
+		Return "BOOLEAN"
+	Endfunc
+
+	* M = Memo
+	Function visitMType(toFields)
+		Return "TEXT"
+	Endfunc
+
+	* N = Numeric
+	Function visitNType(toFields)
+		If Val(toFields.Decimal) > 0
+			toFields.Default = "0.0"
+		Else
+			toFields.Default = '0'
+		Endif
+		Return "NUMERIC(" + toFields.Size + "," + toFields.Decimal + ")"
+	Endfunc
+
+	* Q = Varbinary
+	Function visitQType(toFields)
+		Return "BLOB"
+	Endfunc
+
+	* V = Varchar and Varchar (Binary)
+	Function visitVType(toFields)
+		If Val(toFields.Size) > 0
+			Return "TEXT(" + toFields.Size + ")"
+		EndIf
+		Return "TEXT"
+	Endfunc
+
+	* W = Blob
+	Function visitWType(toFields)
+		Return "BLOB"
+	EndFunc
+EndDefine
+
+* ==================================================== *
+* PostgreSQL
+* ==================================================== *
+Define Class PostgreSQL As DBEngine
+
+    Procedure init
+        DoDefault()    
+        this.nMaxLength = 63
+        this.cLeft = '"'
+        this.cRight = '"'
+        this.bUseSymbolDelimiter = .f.
+        this.bExecuteFkScriptSeparately = .t.
+        this.bExecuteIndexScriptSeparately = .T.
+    EndProc
+
+    Function getDummyQuery
+        Return "SELECT 1"
+    Endfunc
+
+    Function getVersion
+        Local lcCursor, lcVersion
+        lcCursor = Sys(2015)
+        This.SQLExec("SELECT version()", lcCursor)
+        lcVersion = &lcCursor..version
+        Use In (lcCursor)
+
+        Return lcVersion
+    Endfunc
+
+    Function getConnectionString(tbAddDatabase)
+		Local lcConStr
+		Text to lcConStr noshow pretext 15 textmerge
+			DRIVER={<<this.cDriver>>};
+			SERVER=<<this.cServer>>;
+			PORT=<<Iif(Empty(this.nPort), "5432", this.nPort)>>;
+			UID=<<Iif(Empty(this.cUser),'', this.cUser)>>;
+			PWD=<<Iif(Empty(this.cPassword),'', this.cPassword)>>;
+		endtext
+		If tbAddDatabase
+			lcConStr = lcConStr + "DATABASE=" + Alltrim(This.cDatabase)
+		Endif
+		Return lcConStr
+    Endfunc
+
+    Procedure beginTransaction
+        This.selectDatabase()
+        This.SQLExec("BEGIN;")
+    Endproc
+
+    Procedure endTransaction
+        This.selectDatabase()
+        This.SQLExec("COMMIT;")
+    Endproc
+
+    Procedure cancelTransaction
+        This.selectDatabase()
+        This.SQLExec("ROLLBACK;")
+    Endproc
+
+    Function getTableExistsScript(tcTableName)
+        Local lcQuery, lcLeft, lcRight
+        Store "" to lcLeft, lcRight
+        
+        If this.bUseSymbolDelimiter
+            lcLeft = this.cLeft
+            lcRight = this.cRight
+        EndIf
+        
+        TEXT to lcQuery noshow pretext 7 textmerge
+            SELECT table_name as TableName
+            FROM information_schema.tables
+            WHERE table_name = '<<lcLeft+tcTableName+lcRight>>' AND table_schema = 'public'
+        ENDTEXT
+
+        Return lcQuery
+    Endfunc
+
+	function dropTable(tcTable)			
+		Return "DROP TABLE IF EXISTS " + this.cLeft + tcTable + this.cRight + ';'
+	endfunc
+
+    Procedure selectDatabase
+        Return ""
+    Endproc
+
+    Function getTidScript
+        Return "SERIAL PRIMARY KEY"
+    Endfunc
+
+	Function getUUIDScript
+		Return "UUID DEFAULT uuid_generate_v4() PRIMARY KEY NOT NULL"
+	EndFunc
+
+    Function getFieldExistsScript(tcTable, tcField)
+        Local lcQuery, lcLeft, lcRight
+        Store "" to lcLeft, lcRight
+        
+        If this.bUseSymbolDelimiter
+            lcLeft = this.cLeft
+            lcRight = this.cRight
+        Else
+            tcTable = Upper(tcTable)
+            tcField = Upper(tcField)
+        EndIf
+        
+        TEXT to lcQuery noshow pretext 7 textmerge
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = '<<lcLeft+tcTable+lcRight>>' AND column_name = '<<lcLeft+tcField+lcRight>>'
+        ENDTEXT
+
+        Return lcQuery
+    Endfunc
+
+    Function getServerDateScript
+        Return "SELECT CURRENT_TIMESTAMP AS SERTIME"
+    Endfunc
+
+    Function getNewGuidScript
+    	If this.sqlExec('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";')
+	        Return "SELECT uuid_generate_v4() AS GUID"
+	    EndIf
+	    messagebox("No se pudo generar el GUID. Hubo un problema con la extensión 'uuid-ossp'. Por favor, asegúrate de que la extensión está instalada y habilitada en tu servidor de base de datos. Si necesitas ayuda, consulta la documentación o contacta al administrador de la base de datos.", 48)
+    Endfunc
+
+    Function getTablesScript
+        Local lcQuery
+
+        TEXT TO lcQuery NOSHOW PRETEXT 7 TEXTMERGE
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+        ENDTEXT
+
+        Return lcQuery
+    Endfunc
+
+    Function getTableFieldsScript(tcTable)
+        Local lcQuery, lcLeft, lcRight
+        Store "" to lcLeft, lcRight
+        
+        If this.bUseSymbolDelimiter
+            lcLeft = this.cLeft
+            lcRight = this.cRight
+        Else
+            tcTable = Upper(tcTable)
+        EndIf
+        
+        TEXT to lcQuery noshow pretext 7 textmerge
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = '<<lcLeft+tcTable+lcRight>>'
+        ENDTEXT
+
+        Return lcQuery
+    Endfunc
+
+    Procedure getPrimaryKeyScript(tcTable)
+        Local lcScript, lcLeft, lcRight
+        Store "" to lcLeft, lcRight
+        
+        If this.bUseSymbolDelimiter
+            lcLeft = this.cLeft
+            lcRight = this.cRight
+        Else
+            tcTable = Upper(tcTable)
+        EndIf
+
+        TEXT to lcScript noshow pretext 7 textmerge
+            SELECT a.attname as FieldName
+            FROM pg_index i
+            JOIN pg_attribute a ON a.attrelid = i.indrelid
+                AND a.attnum = ANY(i.indkey)
+            WHERE i.indrelid = '<<lcLeft+tcTable+lcRight>>'::regclass
+                AND i.indisprimary;
+        ENDTEXT
+
+        Return lcScript
+    Endproc
+
+    Function createTableOptions
+        Return " "
+    Endfunc
+
+    Procedure sendConfigurationQuerys
+        * Abstract
+    Endproc
+
+	function setEnvironment
+		Local loEnv
+		loEnv = CreateObject("Collection")		
+		loEnv.Add(Set("Date"), 'date')
+		loEnv.Add(Set("Century"), 'century')
+		loEnv.Add(Set("Mark"), 'mark')				
+		
+		Set Date To YMD
+		Set Century On
+		Set Mark To '-'
+
+    	If !this.sqlExec('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";')
+	        messagebox("Hubo un problema con la extensión 'uuid-ossp'. Por favor, asegúrate de que la extensión está instalada y habilitada en tu servidor de base de datos. Si necesitas ayuda, consulta la documentación o contacta al administrador de la base de datos.", 48)
+	    EndIf	    
+
+		Return loEnv
+	EndFunc
+
+    Procedure restoreEnvironment(toEnv)
+        Local lcDate, lcCentury
+        lcDate = toEnv.Item(1)
+        lcCentury = toEnv.Item(2)
+
+        Set Date (lcDate)
+        Set Century &lcCentury
+    Endproc
+
+    Function formatDateOrDateTime(tdValue)
+        If Empty(tdValue)
+            If Type('tdValue') == 'D'
+                Return Date(1753, 01, 01)
+            Endif
+            Return Datetime(1753,01,01,00,00,00)
+        Endif
+
+        Return tdValue
+    Endfunc
+
+    Function getOpenTableScript(tcTable)
+        Local lcLeft, lcRight
+        Store "" to lcLeft, lcRight
+        
+        If this.bUseSymbolDelimiter
+            lcLeft = this.cLeft
+            lcRight = this.cRight
+        Else
+            tcTable = Upper(tcTable)
+        EndIf    
+        Return "SELECT * FROM " + lcLeft + tcTable + lcRight
+    Endfunc
+
+	Function getDataBaseExistsScript(tcDatabase)
+		Local lcScript
+		Text to lcScript noshow pretext 7 textmerge
+			SELECT datname as dbName FROM pg_database WHERE datname = '<<tcDatabase>>';
+		EndText
+		Return lcScript
+	Endfunc
+
+    Function addAutoIncrement()
+        Return ""
+    Endfunc
+
+    Function addPrimaryKey()
+        Return "PRIMARY KEY"
+    Endfunc
+
+	Function addFieldComment(tcComment)
+		Return ""
+	Endfunc
+
+	Function addTableComment(tcComment)
+		Return ""
+	Endfunc
+
+    Function addForeignKey(toFkData)
+        Local lcScript, lcOnUpdate, lcOnDelete, lcLeft, lcRight, lcFkName
+        lcOnUpdate = This.getForeignKeyValue(toFkData.cOnUpdate)
+        lcOnDelete = This.getForeignKeyValue(toFkData.cOnDelete)
+        Store "" to lcLeft, lcRight        
+        TEXT to lcScript noshow pretext 7 textmerge
+            ALTER TABLE <<lcLeft+toFkData.cCurrentTable+lcRight>> ADD CONSTRAINT <<lcLeft+toFkData.cName+lcRight>>
+            FOREIGN KEY (<<lcLeft+toFkData.cCurrentField+lcRight>>)
+            REFERENCES <<lcLeft+toFkData.cTable+lcRight>>(<<lcLeft+toFkData.cField+lcRight>>)
+            ON UPDATE <<lcOnUpdate>>
+            ON DELETE <<lcOnDelete>>
+        endtext
+
+        Return lcScript
+    Endfunc
+
+    Function getForeignKeyValue(tcValue)
+		Do case
+		Case upper(tcValue) == 'NULL'
+			Return 'SET NULL'
+		Case upper(tcValue) == 'DEFAULT'
+			Return 'SET DEFAULT'
+		Case upper(tcValue) == 'RESTRICT'
+			Return 'NO ACTION'
+		EndCase
+		Return tcValue
+    Endfunc
+
+	Function getCreateDatabaseScript(tcDatabase)		
+		Return "CREATE DATABASE " + this.cLeft + tcDatabase + this.cRight + ";"
+	EndFunc
+
+    Function addSingleIndex(toIndex)
+        Local lcScript, lcLeft, lcRight
+        Store "" to lcLeft, lcRight
+        
+        If this.bUseSymbolDelimiter
+            lcLeft = this.cLeft
+            lcRight = this.cRight
+        EndIf
+        Text to lcScript noshow pretext 7 textmerge
+            CREATE <<Iif(toIndex.bUnique, "UNIQUE", "")>> INDEX <<toIndex.cName>> ON <<lcLeft+toIndex.cTable+lcRight>>(<<lcLeft+toIndex.cField+lcRight>> <<toIndex.cSort>>)
+        EndText
+
+        Return lcScript
+    Endfunc
+
+    Function addComposedIndex(toIndex)
+        Local lcScript, lcLeft, lcRight, lcColumns, loResult
+        Store "" to lcLeft, lcRight, lcColumns
+
+        lcLeft = this.cLeft
+        lcRight = this.cRight
+        loResult = CreateObject("Collection")
+
+        For each loComposed in toIndex            
+            For each loColumn in loComposed.oColumns
+                lcColumns = ''
+                For each loField in loColumn
+                    If !Empty(lcColumns)
+                        lcColumns = lcColumns + ','
+                    EndIf
+                    lcColumns = lcColumns + ' ' + lcLeft + loField.cName + lcRight + ' ' + loField.cSort
+                EndFor
+
+                Text to lcScript noshow pretext 7 textmerge
+                    CREATE <<Iif(loComposed.bUnique, "UNIQUE", "")>> INDEX <<loComposed.cName>> ON <<lcLeft+loComposed.cTable+lcRight>>(<<lcColumns>>)
+                EndText
+                loResult.Add(lcScript)
+            EndFor
+        EndFor
+        Return loResult
+    Endfunc
+
+    Function addFieldOptions(toField)
+        Local lcScript
+        lcScript = ''
+        If toField.autoIncrement
+            lcScript = lcScript + ' ' + this.addAutoIncrement()
+        EndIf
+        
+        If !toField.allowNull
+            If toField.addDefault
+                lcScript = lcScript + " DEFAULT " + toField.Default
+            EndIf
+            lcScript = lcScript + " NOT NULL "                
+        EndIf
+        
+        If toField.primaryKey
+            lcScript = lcScript + ' ' + this.addPrimaryKey()
+        EndIf
+
+        Return lcScript
+    Endfunc
+
+	function changeDB(tcNewDatabase)
+		If Empty(tcNewDatabase)
+		    Local lcMsg
+		    Text to lcMsg noshow pretext 7 textmerge
+		        ERROR - Base de Datos No Especificada:
+
+		        No has especificado el nombre de la base de datos que deseas utilizar. Por favor, asegúrate de proporcionar el nombre de la base de datos y vuelve a intentarlo.
+		    endtext
+		    MessageBox(lcMsg, 16)
+		    Return .f.
+		Endif
+
+		This.cDatabase = tcNewDatabase
+		this.disconnect()
+		Return this.connect(.t.)
+	EndFunc
+
+	Function changeTypeOnAutoIncrement(tcType)
+		Return "SERIAL"
+	EndFunc
+
+    * C = Character
+    Function visitCType(toFields)
+    	If Val(toFields.Size) > 0
+    		Return "VARCHAR(" + toFields.Size + ")"
+    	EndIf
+    	Return "VARCHAR"
+    Endfunc
+
+    Function visitYType(toFields)
+	    toFields.Default = "0.0"
+        Return "NUMERIC(" + toFields.Size + "," + toFields.Decimal + ")"
+    Endfunc
+
+    Function visitDType(toFields)
+        toFields.Default = "'1858-11-18'"
+        Return "DATE"
+    Endfunc
+
+    Function visitTType(toFields)
+        toFields.Default = "'1858-11-18 00:00:00'"
+        Return "TIMESTAMP"
+    Endfunc
+
+    Function visitBType(toFields)
+        toFields.Default = "0.0"
+        Return "NUMERIC(" + toFields.Size + "," + toFields.Decimal + ")"
+    Endfunc
+
+    Function visitFType(toFields)
+        toFields.Default = "0.0"
+        Return "NUMERIC(" + toFields.Size + "," + toFields.Decimal + ")"
+    Endfunc
+
+    Function visitGType(toFields)
+        Return "BYTEA"
+    Endfunc
+
+    Function visitIType(toFields)
+        toFields.Default = "0"
+        Return "INTEGER"
+    Endfunc
+
+    Function visitLType(toFields)
+        toFields.Default = "FALSE"
+        Return "BOOLEAN"
+    Endfunc
+
+    Function visitMType(toFields)
+        Return "TEXT"
+    Endfunc
+
+    Function visitNType(toFields)
+	    toFields.Default = "0"
+        If Val(toFields.Decimal) > 0
+        	toFields.Default = "0.0"
+            Return "NUMERIC(" + toFields.Size + "," + toFields.Decimal + ")"
+        Else
+            Return "INTEGER"
+        Endif
+    Endfunc
+
+    Function visitQType(toFields)
+        Return "BYTEA"
+    Endfunc
+
+    Function visitVType(toFields)
+    	If Val(toFields.Size) > 0    	
+	        Return "VARCHAR(" + toFields.Size + ")"
+       	EndIf
+       	Return "VARCHAR"
+    Endfunc
+
+    Function visitWType(toFields)
+        Return "BYTEA"
+    EndFunc
+EndDefine
