@@ -119,6 +119,7 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
     - name: id
       type: int
       size: 11
+      autoIncrement: true
       primaryKey: true
     - name: nombre
       type: varchar
@@ -136,6 +137,7 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
     - name: id
       type: int
       size: 11
+      autoIncrement: true
       primaryKey: true
     - name: nombre
       type: varchar
@@ -150,6 +152,7 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
     - name: id
       type: int
       size: 11
+      autoIncrement: true
       primaryKey: true
     - name: nombre
       type: varchar
@@ -165,7 +168,7 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
       foreignKey:
         fkTable: Categorias
         fkField: id
-        onDelete: setnull
+        onDelete: null
         onUpdate: restrict
 
 # Definición de la tabla "Facturas"
@@ -176,6 +179,7 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
     - name: id
       type: int
       size: 11
+      autoIncrement: true
       primaryKey: true
     - name: cliente_id
       type: int
@@ -183,7 +187,7 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
       foreignKey:
         fkTable: Clientes
         fkField: id
-        onDelete: setnull
+        onDelete: null
         onUpdate: restrict
     - name: fecha
       type: date
@@ -199,6 +203,7 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
     - name: id
       type: int
       size: 11
+      autoIncrement: true
       primaryKey: true
     - name: cliente_id
       type: int
@@ -206,13 +211,13 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
       foreignKey:
         fkTable: Clientes
         fkField: id
-        onDelete: setnull
+        onDelete: null
         onUpdate: restrict
     - name: fecha
       type: date
-    composed:
-      - columns: [cliente_id, fecha desc]
-        unique: true
+  composed:
+    - columns: [cliente_id, fecha desc]
+      unique: true
 
 # Definición de la tabla "DetallesFactura"
 - table:
@@ -222,6 +227,7 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
     - name: id
       type: int
       size: 11
+      autoIncrement: true
       primaryKey: true
     - name: factura_id
       type: int
@@ -237,7 +243,7 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
       foreignKey:
         fkTable: Productos
         fkField: id
-        onDelete: setnull
+        onDelete: null
         onUpdate: restrict
     - name: cantidad
       type: int
@@ -246,9 +252,9 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
       type: float
       size: 8
       decimal: 2
-    composed:
-      - columns: [factura_id, producto_id]
-        unique: true
+  composed:
+    - columns: [factura_id, producto_id]
+      unique: true
 
 # Definición de la tabla "Empleados"
 - table:
@@ -258,6 +264,7 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
     - name: id
       type: int
       size: 11
+      autoIncrement: true
       primaryKey: true
     - name: nombre
       type: varchar
@@ -274,6 +281,7 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
     - name: id
       type: int
       size: 11
+      autoIncrement: true
       primaryKey: true
     - name: nombre
       type: varchar
@@ -291,6 +299,7 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
     - name: id
       type: int
       size: 11
+      autoIncrement: true
       primaryKey: true
     - name: proveedor_id
       type: int
@@ -298,7 +307,7 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
       foreignKey:
         fkTable: Proveedores
         fkField: id
-        onDelete: setnull
+        onDelete: null
         onUpdate: restrict
     - name: empleado_id
       type: int
@@ -306,13 +315,13 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
       foreignKey:
         fkTable: Empleados
         fkField: id
-        onDelete: setnull
+        onDelete: null
         onUpdate: restrict
     - name: fecha
       type: date
-    composed:
-      - columns: [proveedor_id, fecha desc]
-        unique: true
+  composed:
+    - columns: [proveedor_id, fecha desc]
+      unique: true
 
 # Definición de la tabla "DetallesCompra"
 - table: 
@@ -322,6 +331,7 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
     - name: id
       type: int
       size: 11
+      autoIncrement: true
       primaryKey: true
     - name: compra_id
       type: int
@@ -337,7 +347,7 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
       foreignKey:
         fkTable: Productos
         fkField: id
-        onDelete: setnull
+        onDelete: null
         onUpdate: restrict
     - name: cantidad
       type: int
@@ -346,9 +356,9 @@ A continuación se muestra un ejemplo completo que refleja toda la sintaxis del 
       type: float
       size: 8
       decimal: 2
-    composed:
-      - columns: [compra_id, producto_id]
-        unique: true
+  composed:
+    - columns: [compra_id, producto_id]
+      unique: true
 ```
 
 ## Contribuciones
